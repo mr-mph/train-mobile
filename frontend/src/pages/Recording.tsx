@@ -1,20 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
-  MoreHorizontal,
   RotateCcw,
   Square,
-  SkipForward,
   Play,
+  Pause,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -50,11 +43,12 @@ interface RecordingConfig {
   streaming_encoding: boolean;
 }
 
-type Phase = "preparing" | "recording" | "resetting" | "completed";
+type Phase = "preparing" | "ready" | "resetting" | "recording" | "completed";
 
 interface BackendStatus {
   recording_active: boolean;
   current_phase: string;
+  paused?: boolean;
   current_episode?: number;
   total_episodes?: number | null;
   saved_episodes?: number;
@@ -66,8 +60,13 @@ interface BackendStatus {
   error?: string;
   available_controls: {
     stop_recording: boolean;
-    exit_early: boolean;
-    rerecord_episode: boolean;
+    start_episode?: boolean;
+    end_episode?: boolean;
+    restart_episode?: boolean;
+    pause_episode?: boolean;
+    resume_episode?: boolean;
+    exit_early?: boolean;
+    rerecord_episode?: boolean;
   };
 }
 
@@ -75,22 +74,21 @@ const Recording = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { baseUrl, wsBaseUrl, fetchWithHeaders } = useApi();
+  const { baseUrl, fetchWithHeaders } = useApi();
 
-  // Get recording config from navigation state
   const recordingConfig = location.state?.recordingConfig as RecordingConfig;
 
-  // Backend status state - this is the single source of truth
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(
     null
   );
   const [recordingSessionStarted, setRecordingSessionStarted] = useState(false);
-
   const [optimisticPhase, setOptimisticPhase] = useState<Phase | null>(null);
+  const [optimisticPaused, setOptimisticPaused] = useState<boolean | null>(
+    null
+  );
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [muted, setMutedState] = useState<boolean>(() => getMuted());
   const prevRealPhaseRef = useRef<Phase | null>(null);
-  // Guards against React StrictMode double-invocation of the start effect.
   const startInitiatedRef = useRef(false);
 
   const toggleMute = useCallback(() => {
@@ -101,7 +99,6 @@ const Recording = () => {
     });
   }, []);
 
-  // Redirect if no config provided
   useEffect(() => {
     if (!recordingConfig) {
       toast({
@@ -113,33 +110,23 @@ const Recording = () => {
     }
   }, [recordingConfig, navigate, toast]);
 
-  // Start recording session when component loads. The ref guard prevents
-  // React StrictMode (and any future re-renders) from firing /start-recording
-  // twice — the second call returns 409 and bounces the user home.
   useEffect(() => {
     if (recordingConfig && !startInitiatedRef.current) {
       startInitiatedRef.current = true;
-      startRecordingSession();
+      void startRecordingSession();
     }
-    // startRecordingSession is intentionally omitted: re-running this effect
-    // on its identity change would re-fire /start-recording.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingConfig]);
 
-  // Refs so the poll interval below stays stable and reads the latest values
-  // without tearing itself down on every state change.
   const optimisticPhaseRef = useRef(optimisticPhase);
   optimisticPhaseRef.current = optimisticPhase;
 
-  // Poll backend status continuously to stay in sync
   useEffect(() => {
     if (!recordingSessionStarted) return;
 
     const pollStatus = async () => {
       try {
-        const response = await fetchWithHeaders(
-          `${baseUrl}/recording-status`
-        );
+        const response = await fetchWithHeaders(`${baseUrl}/recording-status`);
         if (!response.ok) return;
         const status = await response.json();
         setBackendStatus(status);
@@ -148,13 +135,22 @@ const Recording = () => {
         if (currentOptimistic && status.current_phase === currentOptimistic) {
           setOptimisticPhase(null);
         }
+        if (
+          optimisticPaused !== null &&
+          Boolean(status.paused) === optimisticPaused
+        ) {
+          setOptimisticPaused(null);
+        }
 
         const real = status.current_phase as Phase;
         const prev = prevRealPhaseRef.current;
         if (prev !== real) {
           if (real === "recording" && prev !== null) {
             playRecordingStartCue();
-          } else if (real === "resetting") {
+          } else if (
+            (real === "ready" || real === "resetting") &&
+            prev === "recording"
+          ) {
             playResetStartCue();
           }
           prevRealPhaseRef.current = real;
@@ -191,10 +187,18 @@ const Recording = () => {
       }
     };
 
-    pollStatus();
+    void pollStatus();
     const statusInterval = setInterval(pollStatus, 1000);
     return () => clearInterval(statusInterval);
-  }, [recordingSessionStarted, recordingConfig, navigate, baseUrl, fetchWithHeaders, toast]);
+  }, [
+    recordingSessionStarted,
+    recordingConfig,
+    navigate,
+    baseUrl,
+    fetchWithHeaders,
+    toast,
+    optimisticPaused,
+  ]);
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -216,8 +220,8 @@ const Recording = () => {
       if (response.ok) {
         setRecordingSessionStarted(true);
         toast({
-          title: "Recording Started",
-          description: "End each episode when ready, then start the next.",
+          title: "Session ready",
+          description: "Press Start episode when you're set.",
         });
       } else {
         toast({
@@ -227,7 +231,7 @@ const Recording = () => {
         });
         navigate("/");
       }
-    } catch (error) {
+    } catch {
       toast({
         title: "Connection Error",
         description: "Could not connect to the backend server.",
@@ -237,18 +241,23 @@ const Recording = () => {
     }
   };
 
-  const handleExitEarly = useCallback(async () => {
-    if (!backendStatus?.available_controls.exit_early) return;
+  const handleStartOrEndEpisode = useCallback(async () => {
+    const controls = backendStatus?.available_controls;
+    if (!controls?.exit_early && !controls?.start_episode && !controls?.end_episode)
+      return;
     if (optimisticPhase !== null) return;
 
-    const realPhase = backendStatus.current_phase as Phase;
+    const realPhase = backendStatus!.current_phase as Phase;
     const next: Phase | null =
-      realPhase === "recording" ? "resetting" :
-      realPhase === "resetting" ? "recording" : null;
-
+      realPhase === "recording"
+        ? "ready"
+        : realPhase === "ready" || realPhase === "resetting"
+          ? "recording"
+          : null;
     if (!next) return;
 
     setOptimisticPhase(next);
+    setOptimisticPaused(null);
 
     try {
       const response = await fetchWithHeaders(
@@ -264,7 +273,7 @@ const Recording = () => {
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch {
       setOptimisticPhase(null);
       toast({
         title: "Connection Error",
@@ -274,22 +283,21 @@ const Recording = () => {
     }
   }, [backendStatus, optimisticPhase, baseUrl, fetchWithHeaders, toast]);
 
-  const handleRerecordEpisode = useCallback(async () => {
-    if (!backendStatus?.available_controls.rerecord_episode) return;
+  const handleRestartEpisode = useCallback(async () => {
+    const controls = backendStatus?.available_controls;
+    if (!controls?.restart_episode && !controls?.rerecord_episode) return;
 
+    setOptimisticPaused(null);
     try {
       const response = await fetchWithHeaders(
         `${baseUrl}/recording-rerecord-episode`,
-        {
-          method: "POST",
-        }
+        { method: "POST" }
       );
       const data = await response.json();
-
       if (response.ok) {
         toast({
-          title: "Re-recording Episode",
-          description: `Episode ${backendStatus.current_episode} will be re-recorded.`,
+          title: "Restarting episode",
+          description: `Episode ${backendStatus?.current_episode ?? ""} will be recorded again.`,
         });
       } else {
         toast({
@@ -298,7 +306,7 @@ const Recording = () => {
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch {
       toast({
         title: "Connection Error",
         description: "Could not connect to the backend server.",
@@ -307,18 +315,52 @@ const Recording = () => {
     }
   }, [backendStatus, baseUrl, fetchWithHeaders, toast]);
 
+  const handlePauseToggle = useCallback(async () => {
+    if (!backendStatus) return;
+    const controls = backendStatus.available_controls;
+    const paused =
+      optimisticPaused !== null
+        ? optimisticPaused
+        : Boolean(backendStatus.paused);
+    const path = paused ? "/recording-resume" : "/recording-pause";
+    if (paused && !controls.resume_episode && !controls.pause_episode) return;
+    if (!paused && !controls.pause_episode) return;
+
+    setOptimisticPaused(!paused);
+    try {
+      const response = await fetchWithHeaders(`${baseUrl}${path}`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        setOptimisticPaused(null);
+        toast({
+          title: "Error",
+          description: data.message,
+          variant: "destructive",
+        });
+      }
+    } catch {
+      setOptimisticPaused(null);
+      toast({
+        title: "Connection Error",
+        description: "Could not connect to the backend server.",
+        variant: "destructive",
+      });
+    }
+  }, [backendStatus, optimisticPaused, baseUrl, fetchWithHeaders, toast]);
+
   const handleStopRecording = useCallback(async () => {
     if (!backendStatus?.available_controls.stop_recording) return;
     try {
       await fetchWithHeaders(`${baseUrl}/stop-recording`, {
         method: "POST",
       });
-
       toast({
-        title: "Stopping recording",
+        title: "Ending session",
         description: "Finalizing dataset…",
       });
-    } catch (error) {
+    } catch {
       toast({
         title: "Error",
         description: "Failed to stop recording.",
@@ -337,47 +379,6 @@ const Recording = () => {
     await handleStopRecording();
   }, [handleStopRecording]);
 
-  const handlersRef = useRef({
-    handleExitEarly,
-    handleRerecordEpisode,
-    requestStopRecording,
-    showStopConfirm,
-  });
-  useEffect(() => {
-    handlersRef.current = {
-      handleExitEarly,
-      handleRerecordEpisode,
-      requestStopRecording,
-      showStopConfirm,
-    };
-  });
-
-  const sessionReady = recordingSessionStarted && backendStatus !== null;
-
-  useEffect(() => {
-    if (!sessionReady) return;
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
-        return;
-      }
-      if (e.key === " " || e.code === "Space" || e.key === "ArrowRight") {
-        e.preventDefault();
-        handlersRef.current.handleExitEarly();
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        handlersRef.current.handleRerecordEpisode();
-      } else if (e.key === "Escape") {
-        if (handlersRef.current.showStopConfirm) return;
-        handlersRef.current.requestStopRecording();
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [sessionReady]);
-
   if (!recordingConfig) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
@@ -391,7 +392,6 @@ const Recording = () => {
     );
   }
 
-  // Show loading state while waiting for backend status
   if (!backendStatus) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
@@ -405,41 +405,74 @@ const Recording = () => {
 
   const realPhase = backendStatus.current_phase as Phase;
   const currentPhase: Phase = optimisticPhase ?? realPhase;
+  const isReady = currentPhase === "ready" || currentPhase === "resetting";
+  const isRecording = currentPhase === "recording";
+  const isPaused =
+    optimisticPaused !== null
+      ? optimisticPaused
+      : Boolean(backendStatus.paused) && isRecording;
   const currentEpisode = backendStatus.current_episode ?? 1;
   const savedEpisodes = backendStatus.saved_episodes ?? 0;
-
   const phaseElapsedTime = optimisticPhase
     ? 0
     : backendStatus.phase_elapsed_seconds || 0;
-
   const sessionElapsedTime = backendStatus.session_elapsed_seconds || 0;
+  const controls = backendStatus.available_controls;
 
-  const getStatusText = () => {
-    if (currentPhase === "recording") return `RECORDING EPISODE ${currentEpisode}`;
-    if (currentPhase === "resetting") return "RESET — GET READY";
-    if (currentPhase === "preparing") return "PREPARING SESSION";
-    return "SESSION COMPLETE";
-  };
+  const statusText =
+    currentPhase === "preparing"
+      ? "PREPARING SESSION"
+      : isRecording && isPaused
+        ? `PAUSED · EPISODE ${currentEpisode}`
+        : isRecording
+          ? `RECORDING EPISODE ${currentEpisode}`
+          : isReady
+            ? savedEpisodes > 0
+              ? `READY · START EPISODE ${currentEpisode}`
+              : `READY · START EPISODE ${currentEpisode}`
+            : "SESSION COMPLETE";
 
-  const phaseColor =
-    currentPhase === "recording"
-      ? { dot: "bg-red-500", pill: "bg-red-500/15 text-red-300", timer: "text-green-400", button: "bg-green-500 hover:bg-green-600" }
-      : currentPhase === "resetting"
-      ? { dot: "bg-green-500", pill: "bg-green-500/15 text-green-400", timer: "text-green-400", button: "bg-green-500 hover:bg-green-600" }
-      : { dot: "bg-gray-500", pill: "bg-gray-500/15 text-gray-300", timer: "text-gray-400", button: "bg-gray-500" };
+  const phaseColor = isRecording
+    ? isPaused
+      ? {
+          dot: "bg-yellow-500",
+          pill: "bg-yellow-500/15 text-yellow-300",
+          timer: "text-yellow-400",
+        }
+      : {
+          dot: "bg-red-500",
+          pill: "bg-red-500/15 text-red-300",
+          timer: "text-green-400",
+        }
+    : isReady
+      ? {
+          dot: "bg-green-500",
+          pill: "bg-green-500/15 text-green-400",
+          timer: "text-green-400",
+        }
+      : {
+          dot: "bg-gray-500",
+          pill: "bg-gray-500/15 text-gray-300",
+          timer: "text-gray-400",
+        };
 
-  const primaryLabel =
-    currentPhase === "recording"
-      ? "End Episode"
-      : currentPhase === "resetting"
-      ? "Start Next Episode"
-      : "Advance";
+  const startLabel =
+    savedEpisodes > 0 ? "Start new episode" : "Start episode";
 
-  const PrimaryIcon = currentPhase === "recording" ? SkipForward : Play;
+  const canAdvance =
+    (isReady && (controls.start_episode ?? controls.exit_early)) ||
+    (isRecording && (controls.end_episode ?? controls.exit_early));
+  const canRestart =
+    isRecording && (controls.restart_episode ?? controls.rerecord_episode);
+  const canPauseToggle =
+    isRecording &&
+    (isPaused
+      ? (controls.resume_episode ?? true)
+      : (controls.pause_episode ?? false));
 
   return (
     <div
-      className="min-h-screen bg-black text-white p-4 sm:p-8 pb-28 sm:pb-8"
+      className="min-h-screen bg-black text-white p-4 sm:p-8 pb-36 sm:pb-8"
       style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
     >
       <div className="max-w-2xl mx-auto">
@@ -456,14 +489,19 @@ const Recording = () => {
 
         <div className="bg-black rounded-lg border border-zinc-800 p-8">
           <div className="flex justify-end items-center gap-4 mb-6 text-sm text-gray-400">
-            <span aria-label={`Episode ${currentEpisode}, ${savedEpisodes} saved`}>
+            <span
+              aria-label={`Episode ${currentEpisode}, ${savedEpisodes} saved`}
+            >
               Episode{" "}
               <span className="text-white font-semibold">{currentEpisode}</span>
               <span className="mx-1 text-zinc-600">·</span>
               <span className="text-white font-semibold">{savedEpisodes}</span>{" "}
               saved
             </span>
-            <span className="font-mono" aria-label={`Total session time ${formatTime(sessionElapsedTime)}`}>
+            <span
+              className="font-mono"
+              aria-label={`Total session time ${formatTime(sessionElapsedTime)}`}
+            >
               {formatTime(sessionElapsedTime)}
             </span>
             <Button
@@ -473,42 +511,12 @@ const Recording = () => {
               aria-label={muted ? "Unmute" : "Mute"}
               className="h-8 w-8 text-gray-400 hover:text-white hover:bg-black"
             >
-              {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              {muted ? (
+                <VolumeX className="w-5 h-5" />
+              ) : (
+                <Volume2 className="w-5 h-5" />
+              )}
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-gray-400 hover:text-white hover:bg-black"
-                  aria-label="More actions"
-                >
-                  <MoreHorizontal className="w-5 h-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                onCloseAutoFocus={(e) => e.preventDefault()}
-                className="bg-black border-zinc-800 text-white"
-              >
-                <DropdownMenuItem
-                  onClick={handleRerecordEpisode}
-                  disabled={!backendStatus.available_controls.rerecord_episode}
-                  className="focus:bg-black focus:text-white"
-                >
-                  <RotateCcw className="w-4 h-4 mr-2" />
-                  Re-record episode
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={requestStopRecording}
-                  disabled={!backendStatus.available_controls.stop_recording}
-                  className="text-red-400 focus:bg-black focus:text-red-300"
-                >
-                  <Square className="w-4 h-4 mr-2" />
-                  Stop recording
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
 
           <div className="text-center mb-6">
@@ -517,41 +525,98 @@ const Recording = () => {
               aria-live="polite"
               className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold tracking-widest ${phaseColor.pill}`}
             >
-              <span className={`w-2 h-2 rounded-full ${phaseColor.dot} ${currentPhase !== "completed" ? "animate-pulse" : ""}`} />
-              {getStatusText()}
+              <span
+                className={`w-2 h-2 rounded-full ${phaseColor.dot} ${
+                  currentPhase !== "completed" && !isPaused
+                    ? "animate-pulse"
+                    : ""
+                }`}
+              />
+              {statusText}
             </div>
           </div>
 
           <div className="text-center mb-8">
-            <div className={`text-7xl font-mono font-bold leading-none ${phaseColor.timer}`}>
+            <div
+              className={`text-7xl font-mono font-bold leading-none ${phaseColor.timer}`}
+            >
               {formatTime(phaseElapsedTime)}
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {currentPhase === "recording"
-                ? "Elapsed — press End Episode when done"
-                : currentPhase === "resetting"
-                  ? "Reset — press Start Next when ready"
+              {isRecording
+                ? isPaused
+                  ? "Paused — resume when ready"
+                  : "Elapsed this episode"
+                : isReady
+                  ? "Waiting — start when ready"
                   : "Session time"}
             </div>
           </div>
 
-          <Button
-            onClick={handleExitEarly}
-            disabled={
-              !backendStatus.available_controls.exit_early ||
-              optimisticPhase !== null ||
-              currentPhase === "completed"
-            }
-            className={`w-full text-white font-semibold py-6 text-lg disabled:opacity-50 ${phaseColor.button}`}
-          >
-            <PrimaryIcon className="w-5 h-5 mr-2" />
-            {primaryLabel}
-            {currentPhase !== "completed" && (
-              <span className="ml-3 px-2 py-0.5 rounded text-xs font-mono bg-black/30 text-white/70 hidden sm:inline">
-                SPACE / →
-              </span>
+          {/* Desktop controls */}
+          <div className="hidden sm:flex flex-col gap-3">
+            {isReady && (
+              <Button
+                onClick={handleStartOrEndEpisode}
+                disabled={!canAdvance || optimisticPhase !== null}
+                className="w-full text-white font-semibold py-6 text-lg bg-green-500 hover:bg-green-600 disabled:opacity-50"
+              >
+                <Play className="w-5 h-5 mr-2" />
+                {startLabel}
+              </Button>
             )}
-          </Button>
+
+            {isRecording && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    onClick={handlePauseToggle}
+                    disabled={!canPauseToggle}
+                    variant="outline"
+                    className="py-6 text-lg border-zinc-700"
+                  >
+                    {isPaused ? (
+                      <>
+                        <Play className="w-5 h-5 mr-2" />
+                        Resume
+                      </>
+                    ) : (
+                      <>
+                        <Pause className="w-5 h-5 mr-2" />
+                        Pause
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={handleRestartEpisode}
+                    disabled={!canRestart}
+                    variant="outline"
+                    className="py-6 text-lg border-zinc-700"
+                  >
+                    <RotateCcw className="w-5 h-5 mr-2" />
+                    Restart episode
+                  </Button>
+                </div>
+                <Button
+                  onClick={handleStartOrEndEpisode}
+                  disabled={!canAdvance || optimisticPhase !== null}
+                  className="w-full text-white font-semibold py-6 text-lg bg-green-500 hover:bg-green-600 disabled:opacity-50"
+                >
+                  End episode
+                </Button>
+              </>
+            )}
+
+            <Button
+              onClick={requestStopRecording}
+              disabled={!controls.stop_recording}
+              variant="destructive"
+              className="w-full py-5"
+            >
+              <Square className="w-4 h-4 mr-2" />
+              End recording session
+            </Button>
+          </div>
 
           {currentPhase === "completed" && (
             <p className="text-center text-sm text-gray-400 mt-6">
@@ -561,41 +626,72 @@ const Recording = () => {
         </div>
       </div>
 
-      {/* Sticky mobile episode controls */}
+      {/* Sticky mobile controls */}
       <div
         className="fixed bottom-0 inset-x-0 z-40 border-t border-zinc-800 bg-black/95 p-3 sm:hidden"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
       >
-        <div className="flex gap-2 max-w-lg mx-auto">
-          <Button
-            onClick={handleRerecordEpisode}
-            disabled={!backendStatus.available_controls.rerecord_episode}
-            variant="outline"
-            className="flex-1 h-14 border-zinc-800"
-          >
-            <RotateCcw className="w-5 h-5 mr-2" />
-            Re-record
-          </Button>
-          <Button
-            onClick={handleExitEarly}
-            disabled={
-              !backendStatus.available_controls.exit_early ||
-              optimisticPhase !== null ||
-              currentPhase === "completed"
-            }
-            className={`flex-[2] h-14 text-white font-semibold ${phaseColor.button}`}
-          >
-            <PrimaryIcon className="w-5 h-5 mr-2" />
-            {primaryLabel}
-          </Button>
+        <div className="flex flex-col gap-2 max-w-lg mx-auto">
+          {isReady && (
+            <Button
+              onClick={handleStartOrEndEpisode}
+              disabled={!canAdvance || optimisticPhase !== null}
+              className="w-full h-14 text-white font-semibold bg-green-500 hover:bg-green-600"
+            >
+              <Play className="w-5 h-5 mr-2" />
+              {startLabel}
+            </Button>
+          )}
+
+          {isRecording && (
+            <>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handlePauseToggle}
+                  disabled={!canPauseToggle}
+                  variant="outline"
+                  className="flex-1 h-12 border-zinc-700"
+                >
+                  {isPaused ? (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Resume
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="w-4 h-4 mr-2" />
+                      Pause
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={handleRestartEpisode}
+                  disabled={!canRestart}
+                  variant="outline"
+                  className="flex-1 h-12 border-zinc-700"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Restart
+                </Button>
+              </div>
+              <Button
+                onClick={handleStartOrEndEpisode}
+                disabled={!canAdvance || optimisticPhase !== null}
+                className="w-full h-14 text-white font-semibold bg-green-500 hover:bg-green-600"
+              >
+                End episode
+              </Button>
+            </>
+          )}
+
           <Button
             onClick={requestStopRecording}
-            disabled={!backendStatus.available_controls.stop_recording}
+            disabled={!controls.stop_recording}
             variant="destructive"
-            className="h-14 w-14 p-0"
-            aria-label="Stop"
+            className="w-full h-12"
           >
-            <Square className="w-5 h-5" />
+            <Square className="w-4 h-4 mr-2" />
+            End recording session
           </Button>
         </div>
       </div>
@@ -603,9 +699,10 @@ const Recording = () => {
       <AlertDialog open={showStopConfirm} onOpenChange={setShowStopConfirm}>
         <AlertDialogContent className="bg-black border-zinc-800 text-white">
           <AlertDialogHeader>
-            <AlertDialogTitle>Stop recording?</AlertDialogTitle>
+            <AlertDialogTitle>End recording session?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-400">
-              Saved episodes are kept. The session will end and you'll be taken to the upload page.
+              Saved episodes are kept. Unsaved work on the current episode is
+              discarded. You'll go to the upload page.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -616,7 +713,7 @@ const Recording = () => {
               onClick={confirmStopRecording}
               className="bg-red-500 hover:bg-red-600 text-white"
             >
-              Stop
+              End session
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

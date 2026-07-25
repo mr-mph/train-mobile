@@ -73,8 +73,8 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
         </DialogHeader>
         <div className="space-y-6 py-4">
           <DialogDescription className="text-gray-400 text-base leading-relaxed text-center">
-            Confirm robot and cameras. During the session you end each episode
-            and start the next when you&apos;re ready — no fixed timers.
+            Confirm robot and cameras. Start each episode when ready, pause or
+            restart mid-episode, then end it — no fixed timers.
           </DialogDescription>
 
           <div className="grid grid-cols-1 gap-6">

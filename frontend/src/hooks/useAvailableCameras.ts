@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useApi } from "@/contexts/ApiContext";
+import { getMediaDevices } from "@/lib/mediaDevices";
 
 export interface AvailableCamera {
   index: number;
@@ -16,10 +17,12 @@ interface UseAvailableCamerasOptions {
 }
 
 /**
- * Enumerates cv2 camera indices from `/available-cameras` and merges each
- * with the matching browser deviceId (by AVFoundation localizedName) so
- * callers can render a preview alongside the bound dropdowns. Refreshes on
- * USB hotplug.
+ * Enumerates cv2 camera indices from `/available-cameras` and, when the
+ * browser MediaDevices API is available (HTTPS / localhost), merges each
+ * with the matching browser deviceId (by AVFoundation localizedName).
+ *
+ * On plain LAN HTTP, MediaDevices is undefined — we still return Mac-host
+ * cameras from the API so configuration and server-side previews work.
  */
 export function useAvailableCameras({
   enabled = true,
@@ -31,17 +34,25 @@ export function useAvailableCameras({
   const refresh = useCallback(async (): Promise<AvailableCamera[]> => {
     setIsLoading(true);
     try {
-      // Need a permission grant before enumerateDevices() returns labels.
-      try {
-        const probe = await navigator.mediaDevices.getUserMedia({ video: true });
-        probe.getTracks().forEach((t) => t.stop());
-      } catch {
-        // ignore — we'll still try to enumerate, just without labels
-      }
+      const media = getMediaDevices();
+      let browserDevices: { deviceId: string; label: string }[] = [];
 
-      const browserDevices = (await navigator.mediaDevices.enumerateDevices())
-        .filter((d) => d.kind === "videoinput")
-        .map((d) => ({ deviceId: d.deviceId, label: d.label }));
+      if (media) {
+        // Need a permission grant before enumerateDevices() returns labels.
+        try {
+          const probe = await media.getUserMedia({ video: true });
+          probe.getTracks().forEach((t) => t.stop());
+        } catch {
+          // ignore — we'll still try to enumerate, just without labels
+        }
+        try {
+          browserDevices = (await media.enumerateDevices())
+            .filter((d) => d.kind === "videoinput")
+            .map((d) => ({ deviceId: d.deviceId, label: d.label }));
+        } catch {
+          browserDevices = [];
+        }
+      }
 
       const r = await fetchWithHeaders(`${baseUrl}/available-cameras`);
       if (!r.ok) {
@@ -57,7 +68,8 @@ export function useAvailableCameras({
 
       // Browser's MediaDeviceInfo.label starts with AVFoundation's localizedName
       // but Chrome often appends "(vendorId:productId)". Match by exact, then
-      // prefix, then either-contains.
+      // prefix, then either-contains. Skipped entirely when MediaDevices is
+      // unavailable (LAN HTTP) — deviceId stays empty; previews use cv2 index.
       const used = new Set<string>();
       const merged: AvailableCamera[] = backendCams.map((cam) => {
         const label = cam.name || `Camera ${cam.index}`;
@@ -69,7 +81,8 @@ export function useAvailableCameras({
           candidates.find((d) => norm(d.label) === target) ||
           candidates.find((d) => norm(d.label).startsWith(target)) ||
           candidates.find(
-            (d) => norm(d.label).includes(target) || target.includes(norm(d.label))
+            (d) =>
+              norm(d.label).includes(target) || target.includes(norm(d.label))
           );
         if (match) used.add(match.deviceId);
         return {
@@ -92,10 +105,15 @@ export function useAvailableCameras({
   useEffect(() => {
     if (!enabled) return;
     refresh();
-    const handler = () => refresh();
-    navigator.mediaDevices.addEventListener("devicechange", handler);
-    return () =>
-      navigator.mediaDevices.removeEventListener("devicechange", handler);
+    const media = getMediaDevices();
+    if (!media || typeof media.addEventListener !== "function") {
+      return;
+    }
+    const handler = () => {
+      void refresh();
+    };
+    media.addEventListener("devicechange", handler);
+    return () => media.removeEventListener("devicechange", handler);
   }, [enabled, refresh]);
 
   return { cameras, isLoading, refresh };

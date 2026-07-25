@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { getMediaDevices } from "@/lib/mediaDevices";
 
 /**
  * Attach a live browser camera stream to a `<video>` element by deviceId.
  * Set `paused=true` to release the stream (e.g. so cv2.VideoCapture can claim
  * the camera exclusively). The stream is auto-stopped on unmount.
+ *
+ * No-ops safely when `navigator.mediaDevices` is unavailable (plain HTTP on a
+ * LAN IP — not a secure context).
  *
  * A first getUserMedia attempt can fail two ways that we want to recover from:
  *   - Transiently: the device is briefly held (e.g. right after an enumeration
@@ -37,12 +41,13 @@ export function useCameraStream(deviceId: string, paused: boolean) {
   // Only retry when we're actually in the error state, so an unrelated change
   // (e.g. plugging in a mic) never tears down a healthy stream.
   useEffect(() => {
+    const media = getMediaDevices();
+    if (!media || typeof media.addEventListener !== "function") return;
     const onDeviceChange = () => {
       if (hasErrorRef.current) setRetryKey((k) => k + 1);
     };
-    navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
-    return () =>
-      navigator.mediaDevices.removeEventListener("devicechange", onDeviceChange);
+    media.addEventListener("devicechange", onDeviceChange);
+    return () => media.removeEventListener("devicechange", onDeviceChange);
   }, []);
 
   useEffect(() => {
@@ -50,6 +55,12 @@ export function useCameraStream(deviceId: string, paused: boolean) {
       if (!deviceId) setHasError(true);
       return;
     }
+    const media = getMediaDevices();
+    if (!media) {
+      setHasError(true);
+      return;
+    }
+
     let cancelled = false;
     let stream: MediaStream | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -57,7 +68,7 @@ export function useCameraStream(deviceId: string, paused: boolean) {
 
     const start = async (attempt: number) => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
+        stream = await media.getUserMedia({
           video: { deviceId: { exact: deviceId } },
         });
         if (cancelled) {

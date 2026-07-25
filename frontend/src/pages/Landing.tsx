@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,9 +14,20 @@ import UsageInstructionsModal from "@/components/landing/UsageInstructionsModal"
 import { useHfAuth } from "@/contexts/HfAuthContext";
 import { useRobots } from "@/hooks/useRobots";
 import { useDatasets } from "@/hooks/useDatasets";
+import { useApi } from "@/contexts/ApiContext";
 import { CameraConfig } from "@/components/recording/CameraConfiguration";
 import { isHostedSpace } from "@/lib/isHostedSpace";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const ON_SPACE = isHostedSpace();
 
@@ -32,6 +44,7 @@ const Landing = () => {
   const [tab, setTab] = useState<MainTab>("teleop");
   const [showUsageModal, setShowUsageModal] = useState(ON_SPACE);
   const { auth } = useHfAuth();
+  const { baseUrl, fetchWithHeaders } = useApi();
 
   const {
     selectedName,
@@ -43,13 +56,18 @@ const Landing = () => {
     deleteRobot,
   } = useRobots();
 
-  const { datasets, loading: datasetsLoading } = useDatasets();
+  const { datasets, loading: datasetsLoading, refresh: refreshDatasets } =
+    useDatasets();
 
   const [showRecordingModal, setShowRecordingModal] = useState(false);
   const [datasetName, setDatasetName] = useState("");
   const [singleTask, setSingleTask] = useState("");
   const [streamingEncoding, setStreamingEncoding] = useState(true);
   const [cameras, setCameras] = useState<CameraConfig[]>([]);
+  const [datasetPendingDelete, setDatasetPendingDelete] = useState<
+    string | null
+  >(null);
+  const [isDeletingDataset, setIsDeletingDataset] = useState(false);
 
   const releaseStreamsRef = useRef<(() => void) | null>(null);
 
@@ -81,6 +99,46 @@ const Landing = () => {
       releaseStreamsRef.current();
     }
   };
+
+  const confirmDeleteDataset = useCallback(async () => {
+    if (!datasetPendingDelete) return;
+    setIsDeletingDataset(true);
+    try {
+      const response = await fetchWithHeaders(`${baseUrl}/delete-dataset`, {
+        method: "POST",
+        body: JSON.stringify({ dataset_repo_id: datasetPendingDelete }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        toast({
+          title: "Dataset deleted",
+          description: `${datasetPendingDelete} removed from disk.`,
+        });
+        refreshDatasets();
+      } else {
+        toast({
+          title: "Delete failed",
+          description: data.message || "Could not delete the dataset.",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Connection error",
+        description: "Could not connect to the backend server.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeletingDataset(false);
+      setDatasetPendingDelete(null);
+    }
+  }, [
+    datasetPendingDelete,
+    baseUrl,
+    fetchWithHeaders,
+    toast,
+    refreshDatasets,
+  ]);
 
   const handleStartRecording = async () => {
     if (!selectedRecord) {
@@ -321,21 +379,40 @@ const Landing = () => {
               ) : (
                 <ul className="space-y-2">
                   {localDatasets.map((d) => (
-                    <li key={d.repo_id}>
+                    <li
+                      key={d.repo_id}
+                      className="flex items-stretch gap-2 rounded-lg border border-zinc-800 overflow-hidden"
+                    >
                       <button
                         type="button"
-                        className="w-full text-left rounded-lg border border-zinc-800 px-3 py-2 hover:border-green-600 hover:bg-zinc-950"
+                        className="min-w-0 flex-1 text-left px-3 py-2 hover:bg-zinc-950 hover:border-green-600"
                         onClick={() =>
                           navigate(
                             `/edit-dataset?repo=${encodeURIComponent(d.repo_id)}`,
                           )
                         }
                       >
-                        <span className="font-mono text-sm">{d.repo_id}</span>
+                        <span className="font-mono text-sm break-all">
+                          {d.repo_id}
+                        </span>
                         <span className="block text-xs text-zinc-500 mt-0.5">
                           Edit episodes
                         </span>
                       </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Delete ${d.repo_id}`}
+                        disabled={isDeletingDataset}
+                        className="h-auto w-11 shrink-0 rounded-none border-l border-zinc-800 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDatasetPendingDelete(d.repo_id);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -413,6 +490,45 @@ const Landing = () => {
         onStart={handleStartRecording}
         releaseStreamsRef={releaseStreamsRef}
       />
+
+      <AlertDialog
+        open={datasetPendingDelete != null}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingDataset) setDatasetPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent className="bg-black border-zinc-800 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete dataset from disk?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-400">
+              This permanently removes{" "}
+              <span className="font-mono text-gray-200">
+                {datasetPendingDelete}
+              </span>{" "}
+              from this Mac. It does not delete anything already pushed to the
+              Hub.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={isDeletingDataset}
+              className="bg-black border-zinc-800 text-white hover:bg-zinc-900"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeletingDataset}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDeleteDataset();
+              }}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isDeletingDataset ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

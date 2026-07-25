@@ -57,8 +57,10 @@ from .record import (
     handle_delete_dataset,
     handle_exit_early,
     handle_get_dataset_info,
+    handle_pause_recording,
     handle_recording_status,
     handle_rerecord_episode,
+    handle_resume_recording,
     handle_start_recording,
     handle_stop_recording,
     handle_upload_dataset,
@@ -599,14 +601,26 @@ def recording_status():
 
 @app.post("/recording-exit-early")
 def recording_exit_early():
-    """Skip to next episode (replaces right arrow key)"""
+    """Start episode (ready) or end episode (recording)."""
     return handle_exit_early()
 
 
 @app.post("/recording-rerecord-episode")
 def recording_rerecord_episode():
-    """Re-record current episode (replaces left arrow key)"""
+    """Restart current episode (discard buffer, record again)."""
     return handle_rerecord_episode()
+
+
+@app.post("/recording-pause")
+def recording_pause():
+    """Pause the current episode (hold arm, stop writing frames)."""
+    return handle_pause_recording()
+
+
+@app.post("/recording-resume")
+def recording_resume():
+    """Resume a paused episode."""
+    return handle_resume_recording()
 
 
 @app.post("/upload-dataset")

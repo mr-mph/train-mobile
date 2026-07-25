@@ -35,6 +35,8 @@ const API_PREFIXES = [
   "/recording-status",
   "/recording-exit-early",
   "/recording-rerecord-episode",
+  "/recording-pause",
+  "/recording-resume",
   "/start-inference",
   "/stop-inference",
   "/inference-status",
