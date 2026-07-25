@@ -28,7 +28,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.datastructures import Headers
@@ -37,6 +37,7 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from . import datasets as dataset_browser
+from .camera_stream import camera_hub
 
 # Import our custom calibration functionality
 from .calibrate import CalibrationRequest, calibration_manager
@@ -328,6 +329,8 @@ def get_joint_positions():
 
 @app.post("/start-inference")
 def start_inference(request: InferenceRequest):
+    # Preview streams hold OpenCV devices; release them before rollout opens cams.
+    camera_hub.stop_all()
     result = handle_start_inference(request)
     if not result.get("success"):
         raise HTTPException(
@@ -428,7 +431,48 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.post("/start-recording")
 def start_recording(request: RecordingRequest):
     """Start a dataset recording session"""
+    # Preview streams hold OpenCV devices; release them before the recorder opens cams.
+    camera_hub.stop_all()
     return handle_start_recording(request)
+
+
+@app.get("/cameras/{camera_index}/mjpeg")
+def stream_camera_mjpeg(
+    camera_index: int,
+    width: int = 640,
+    height: int = 480,
+    fps: float = 15,
+):
+    """Multipart MJPEG preview of a host OpenCV camera (for remote / phone UIs)."""
+    if camera_index < 0:
+        raise HTTPException(status_code=400, detail="camera_index must be >= 0")
+    width = max(160, min(width, 1920))
+    height = max(120, min(height, 1080))
+    fps = max(1.0, min(float(fps), 30.0))
+
+    try:
+        frames = camera_hub.mjpeg_frames(camera_index, width=width, height=height, fps=fps)
+        # Peek one chunk so open failures surface as HTTP errors, not a hung img.
+        first = next(frames)
+    except Exception as exc:
+        logger.error("Camera preview failed for index %s: %s", camera_index, exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    def gen():
+        yield first
+        yield from frames
+
+    return StreamingResponse(
+        gen(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+    )
+
+
+@app.post("/cameras/preview/stop")
+def stop_camera_previews():
+    """Release all preview OpenCV captures (call before record / inference)."""
+    return camera_hub.stop_all()
 
 
 @app.post("/stop-recording")

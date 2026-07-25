@@ -422,7 +422,8 @@ def _run_dev(*, no_open: bool = False) -> None:
             env=os.environ.copy(),
         )
         processes.append(("backend", backend_process))
-        if not _wait_for_port(BACKEND_PORT, timeout=15):
+        # Cold imports (lerobot / cv2 / torch) often exceed 15s on first boot.
+        if not _wait_for_port(BACKEND_PORT, timeout=60):
             if backend_process.poll() is not None:
                 _fail(
                     f"Backend exited early with code {backend_process.returncode}. Check the uvicorn output above."

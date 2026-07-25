@@ -7,32 +7,22 @@ import { useRobots } from "@/hooks/useRobots";
 import CameraFeed from "./CameraFeed";
 
 /**
- * Optional live camera panel for the teleoperation page. Off by default so we
- * never call getUserMedia just by landing on the page (same consent pattern as
- * the calibration camera toggle). Teleoperation opens no cv2 cameras, so the
- * browser can stream them directly while the arm runs.
- *
- * A strict mirror of the selected robot's configured cameras: one live feed per
- * camera on the robot record (e.g. "wrist_cam", "webcam"), stacked vertically.
- * If the robot has none configured it shows nothing — teleop never surfaces a
- * device that wasn't deliberately added to the robot.
+ * Optional live camera panel for the teleoperation page. Off by default.
+ * Streams Mac OpenCV cameras via the lelab MJPEG endpoints (phone/tunnel safe).
  */
 const TeleopCameraPanel: React.FC = () => {
   const [enabled, setEnabled] = useState(false);
-  // Bumped by the retry button to remount the feeds (a fresh getUserMedia
-  // attempt) — useful if a camera was unplugged and reconnected.
   const [reloadKey, setReloadKey] = useState(0);
   const { selectedRecord, isLoading: robotsLoading } = useRobots();
 
-  // Feeds come solely from the robot's configured cameras; each carries a stored
-  // browser device_id we stream directly. A configured camera whose device is
-  // currently absent still shows (name + failed-preview placeholder), so the
-  // user can tell it's expected but not detected.
   const configured = selectedRecord?.cameras ?? [];
   const feeds = configured.map((c) => ({
     key: c.id,
     name: c.name,
-    deviceId: c.device_id,
+    cameraIndex: c.camera_index,
+    width: c.width ?? 640,
+    height: c.height ?? 480,
+    fps: c.fps ?? 15,
   }));
 
   return (
@@ -70,8 +60,13 @@ const TeleopCameraPanel: React.FC = () => {
             {feeds.map((feed) => (
               <CameraFeed
                 key={`${feed.key}:${reloadKey}`}
-                deviceId={feed.deviceId}
+                cameraIndex={feed.cameraIndex}
+                width={feed.width}
+                height={feed.height}
+                fps={feed.fps}
                 label={feed.name}
+                reloadKey={reloadKey}
+                className="rounded-lg border border-gray-700"
               />
             ))}
           </div>

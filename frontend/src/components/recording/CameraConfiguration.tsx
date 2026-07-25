@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
-import { Camera, Plus, X, VideoOff, RefreshCw, ChevronRight } from "lucide-react";
+import { Camera, Plus, X, RefreshCw, ChevronRight } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { useAvailableCameras } from "@/hooks/useAvailableCameras";
-import { useCameraStream } from "@/hooks/useCameraStream";
+import { useApi } from "@/contexts/ApiContext";
+import CameraFeed from "@/components/control/CameraFeed";
 
 // Sentinels distinguish "leave unset" (auto-detect / platform default) from an
 // explicit choice. Radix Select disallows an empty-string value, so we map these
@@ -149,7 +150,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
       device_id: selectedCamera.deviceId,
       width: 640,
       height: 480,
-      fps: 30,
+      fps: 15,
     };
 
     onCamerasChange([...cameras, newCamera]);
@@ -180,12 +181,15 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
   };
 
   // When the recording session is starting, the parent calls
-  // releaseStreamsRef.current() to make every CameraPreview drop its browser
-  // stream so cv2.VideoCapture can grab the camera exclusively.
+  // releaseStreamsRef.current() to drop MJPEG previews so cv2 can open exclusively.
   const [streamsPaused, setStreamsPaused] = useState(false);
+  const { baseUrl, fetchWithHeaders } = useApi();
   const releaseAllCameraStreams = useCallback(() => {
     setStreamsPaused(true);
-  }, []);
+    void fetchWithHeaders(`${baseUrl}/cameras/preview/stop`, { method: "POST" }).catch(
+      () => undefined,
+    );
+  }, [baseUrl, fetchWithHeaders]);
 
   useEffect(() => {
     if (releaseStreamsRef) {
@@ -346,38 +350,18 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
   onRemove,
   onUpdate,
 }) => {
-  const { videoRef, hasError: streamError } = useCameraStream(
-    camera.device_id,
-    paused
-  );
-  const showVideo = !paused && camera.device_id && !streamError;
   return (
     <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
-      <div className="aspect-[4/3] bg-gray-800 relative">
-        {showVideo ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            muted
-            playsInline
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center">
-            <VideoOff className="w-8 h-8 text-gray-500 mb-2" />
-            <span className="text-gray-500 text-sm">
-              {paused
-                ? "Preview paused"
-                : camera.device_id
-                ? "Preview failed"
-                : "No browser match"}
-            </span>
-          </div>
-        )}
-      </div>
+      <CameraFeed
+        cameraIndex={camera.camera_index}
+        width={camera.width}
+        height={camera.height}
+        fps={camera.fps ?? 15}
+        paused={paused}
+      />
 
       {/* Camera Info */}
-      <div className="p-3 space-y-2">
+      <div className="p-3 space-y-2 border-t border-gray-800">
         <div className="flex items-center justify-between">
           <h5 className="font-medium text-white truncate">{camera.name}</h5>
           {!readOnly && (
@@ -432,7 +416,7 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
               <div className="flex items-center gap-2">
                 <span className="w-16">FPS:</span>
                 <NumberInput
-                  value={camera.fps ?? 30}
+                  value={camera.fps ?? 15}
                   onChange={(v) => {
                     if (v !== undefined) onUpdate({ fps: v });
                   }}

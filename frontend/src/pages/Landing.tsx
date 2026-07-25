@@ -207,7 +207,7 @@ const Landing = () => {
       num_episodes: numEpisodes,
       episode_time_s: episodeTimeS,
       reset_time_s: resetTimeS,
-      fps: 30,
+      fps: 15,
       video: true,
       push_to_hub: false,
       resume: false,

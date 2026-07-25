@@ -40,6 +40,8 @@ REQUIRED_PATHS = {
     "/jobs",
     "/available-ports",
     "/available-cameras",
+    "/cameras/{camera_index}/mjpeg",
+    "/cameras/preview/stop",
     "/hf-auth-status",
     "/ws/joint-data",
 }

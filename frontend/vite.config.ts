@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(
-    Boolean
+    Boolean,
   ),
   // Strip console.log / debug / info in production minification; keep
   // console.warn and console.error for observability of real problems.
@@ -21,7 +21,10 @@ export default defineConfig(({ mode }) => ({
         : [],
   },
   preview: {
-    allowedHosts: ["lerobot-lelab.hf.space"],
+    allowedHosts: ["robots.sethw.dev"],
+  },
+  server: {
+    allowedHosts: ["robots.sethw.dev"],
   },
   resolve: {
     alias: {

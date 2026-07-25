@@ -32,14 +32,13 @@ import {
 import { startInference } from "@/lib/inferenceApi";
 import CheckpointDropdown from "@/components/jobs/CheckpointDropdown";
 import { useAvailableCameras } from "@/hooks/useAvailableCameras";
-import { useCameraStream } from "@/hooks/useCameraStream";
+import CameraFeed from "@/components/control/CameraFeed";
 
-const CameraThumbnail: React.FC<{ deviceId: string; paused: boolean }> = ({
-  deviceId,
-  paused,
-}) => {
-  const { videoRef, hasError } = useCameraStream(deviceId, paused);
-  if (paused || hasError || !deviceId) {
+const CameraThumbnail: React.FC<{
+  cameraIndex: number | null;
+  paused: boolean;
+}> = ({ cameraIndex, paused }) => {
+  if (paused || cameraIndex == null) {
     return (
       <div className="w-32 h-24 bg-gray-800 rounded border border-gray-700 flex flex-col items-center justify-center">
         <VideoOff className="w-5 h-5 text-gray-500 mb-1" />
@@ -50,12 +49,13 @@ const CameraThumbnail: React.FC<{ deviceId: string; paused: boolean }> = ({
     );
   }
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      muted
-      playsInline
-      className="w-32 h-24 object-cover rounded border border-gray-700 bg-black"
+    <CameraFeed
+      cameraIndex={cameraIndex}
+      width={320}
+      height={240}
+      fps={15}
+      className="w-32 rounded border border-gray-700"
+      frameClassName="aspect-auto h-24"
     />
   );
 };
@@ -68,7 +68,7 @@ interface Props {
   initialStep: number | null;
 }
 
-const DEFAULT_FPS = 30;
+const DEFAULT_FPS = 15;
 
 const InferenceModal: React.FC<Props> = ({
   open,
@@ -425,7 +425,7 @@ const InferenceModal: React.FC<Props> = ({
                           )}
                         </SelectContent>
                       </Select>
-                      <CameraThumbnail deviceId={bound?.deviceId ?? ""} paused={submitting} />
+                      <CameraThumbnail cameraIndex={value} paused={submitting} />
                     </div>
                   );
                 })}
