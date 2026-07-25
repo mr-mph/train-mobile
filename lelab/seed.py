@@ -68,7 +68,7 @@ def seed_seth_bot_if_missing() -> dict:
         raw = json.loads((_SEED_DIR / "seth-bot.json").read_text())
         cameras = []
         for cam in raw.get("cameras") or []:
-            cameras.append({**cam, "width": 640, "height": 480, "fps": 15})
+            cameras.append({**cam, "width": 640, "height": 480, "fps": 30})
         save_robot_record(
             "seth-bot",
             {
@@ -81,6 +81,6 @@ def seed_seth_bot_if_missing() -> dict:
             allow_create=True,
         )
         created = True
-        logger.info("Seeded seth-bot robot record with 640x480@15 cameras")
+        logger.info("Seeded seth-bot robot record with 640x480@30 cameras")
 
     return {"seeded": created, "robot": "seth-bot" if robot_path.is_file() else None}

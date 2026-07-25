@@ -74,7 +74,7 @@ interface Props {
   initialStep: number | null;
 }
 
-const DEFAULT_FPS = 15;
+const DEFAULT_FPS = 30;
 
 const InferenceModal: React.FC<Props> = ({
   open,

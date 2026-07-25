@@ -143,11 +143,24 @@ def _format_cameras_arg(cameras: dict[str, dict[str, Any]]) -> str:
     """Convert {name: {type, camera_index, width, height, fps}} into
     lerobot's CLI dict syntax. The frontend key `camera_index` is
     remapped to lerobot's `index_or_path`."""
+    import platform
+
     parts = []
     for name, cfg in cameras.items():
         remapped = {
             ("index_or_path" if k == "camera_index" else k): v for k, v in cfg.items() if v is not None
         }
+        # macOS AVFoundation cams often only accept 30 FPS. LeRobot rejects a
+        # mismatch (e.g. request 15 → actual 30), which aborts rollout after
+        # the first camera connects. Prefer 30 on Darwin when a low FPS was set.
+        if platform.system() == "Darwin":
+            fps = remapped.get("fps")
+            try:
+                fps_f = float(fps) if fps is not None else None
+            except (TypeError, ValueError):
+                fps_f = None
+            if fps_f is not None and fps_f < 30:
+                remapped["fps"] = 30
         body = ", ".join(f"{k}: {v}" for k, v in remapped.items())
         parts.append(f"{name}: {{{body}}}")
     return "{" + ", ".join(parts) + "}"
@@ -206,6 +219,11 @@ def _friendly_hint(error_text: str | None) -> str | None:
         return (
             "A camera can't keep up — frames are arriving too slowly. Lower its resolution/FPS, "
             "set FOURCC=MJPG, and close other heavy apps, then try again."
+        )
+    if "failed to set fps" in low or "actual_fps" in low:
+        return (
+            "A camera rejected the configured FPS (common on macOS USB cams). "
+            "TrainMobile now defaults rollout to 30 FPS — try again."
         )
     if "failed to set capture_" in low or "actual_width" in low or "actual_height" in low:
         return "A camera doesn't support the configured resolution — open camera settings and click Auto."
