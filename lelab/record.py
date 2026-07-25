@@ -807,29 +807,11 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
             teleop.configure()
         logger.info("✅ Devices ready")
 
-        # Live phone preview while recording owns the USB devices: push frames
-        # from robot.get_observation() into the camera hub relay (no second open).
-        from .camera_stream import camera_hub
+        # Central frame path: every cam.read* publishes to FrameBroker →
+        # dataset gets the same ndarray; UI gets JPEG via CameraHub relay.
+        from .frame_broker import frame_broker
 
-        name_to_index: dict[str, int] = {}
-        for cam_name, cam_cfg in (cfg.robot.cameras or {}).items():
-            idx = getattr(cam_cfg, "index_or_path", None)
-            if isinstance(idx, int) and idx >= 0:
-                name_to_index[cam_name] = idx
-        _orig_get_observation = None
-        if name_to_index:
-            camera_hub.begin_relay(list(name_to_index.values()))
-            _orig_get_observation = robot.get_observation
-
-            def get_observation_with_preview():
-                obs = _orig_get_observation()
-                for cam_name, cam_index in name_to_index.items():
-                    frame = obs.get(cam_name)
-                    if frame is not None:
-                        camera_hub.push_relay_frame(cam_index, frame)
-                return obs
-
-            robot.get_observation = get_observation_with_preview  # type: ignore[method-assign]
+        frame_broker.attach_robot(robot)
 
         try:
             def begin_phase(name: str) -> None:
@@ -945,9 +927,7 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
             print("🏁 STATUS CHANGE: Recording session completed")
             log_say("Stop recording", cfg.play_sounds, blocking=True)
         finally:
-            if _orig_get_observation is not None:
-                robot.get_observation = _orig_get_observation  # type: ignore[method-assign]
-            camera_hub.end_relay()
+            frame_broker.detach()
 
     finally:
         try:

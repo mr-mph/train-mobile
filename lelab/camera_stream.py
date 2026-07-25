@@ -261,8 +261,6 @@ class _RelaySlot:
         self._stream_clients = 0
         self._last_used = time.monotonic()
         self._encode_params: list[int] | None = None
-        self._min_interval = 1.0 / 15.0
-        self._last_push = 0.0
 
     def touch(self) -> None:
         with self._cond:
@@ -327,13 +325,12 @@ class _RelaySlot:
         with self._cond:
             self._cond.notify_all()
 
-    def push_bgr(self, frame: Any) -> None:
-        """Encode a BGR (or RGB HxWx3) ndarray and publish it."""
-        now = time.monotonic()
-        if now - self._last_push < self._min_interval:
-            return
-        self._last_push = now
+    def push_bgr(self, frame: Any, *, rgb: bool = False) -> None:
+        """Encode a HxWx3 ndarray and publish it.
 
+        Pass ``rgb=True`` when the frame is RGB (LeRobot OpenCV default); OpenCV
+        JPEG encode expects BGR.
+        """
         import cv2
         import numpy as np
 
@@ -342,6 +339,10 @@ class _RelaySlot:
         arr = np.asarray(frame)
         if arr.ndim != 3 or arr.shape[2] not in (3, 4):
             return
+        if arr.shape[2] == 4:
+            arr = arr[:, :, :3]
+        if rgb:
+            arr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
         h, w = arr.shape[:2]
         if w != self.width or h != self.height:
@@ -408,11 +409,11 @@ class CameraHub:
             self._relays.clear()
         logger.info("Camera preview relay disabled")
 
-    def push_relay_frame(self, index: int, frame: Any) -> None:
+    def push_relay_frame(self, index: int, frame: Any, *, rgb: bool = True) -> None:
         with self._lock:
             slot = self._relays.get(index)
         if slot is not None:
-            slot.push_bgr(frame)
+            slot.push_bgr(frame, rgb=rgb)
 
     def _reap_idle_unlocked(self) -> None:
         stale = [
