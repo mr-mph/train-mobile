@@ -53,13 +53,13 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
   };
 
   return (
-    <Card className="bg-slate-800/50 border-slate-700 rounded-xl">
+    <Card className="bg-black border-zinc-800 rounded-xl">
       <CardHeader>
         <CardTitle className="text-white">Run Configuration</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         <div>
-          <Label className="text-slate-300">Dataset Repository ID *</Label>
+          <Label className="text-zinc-300">Dataset Repository ID *</Label>
           <div className="mt-1">
             <DatasetCombobox
               datasets={datasets}
@@ -70,24 +70,24 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
               }}
             />
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-zinc-500 mt-1">
             HuggingFace Hub dataset repository ID
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="policy_type" className="text-slate-300">
+            <Label htmlFor="policy_type" className="text-zinc-300">
               Policy
             </Label>
             <Select
               value={config.policy_type}
               onValueChange={(value) => updateConfig('policy_type', value)}
             >
-              <SelectTrigger id="policy_type" className="bg-slate-900 border-slate-600 text-white rounded-lg">
+              <SelectTrigger id="policy_type" className="bg-black border-zinc-800 text-white rounded-lg">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-slate-800 border-slate-600 text-white">
+              <SelectContent className="bg-black border-zinc-800 text-white">
                 <SelectItem value="act">ACT (Action Chunking Transformer)</SelectItem>
                 <SelectItem value="diffusion">Diffusion Policy</SelectItem>
                 <SelectItem value="pi0">PI0</SelectItem>
@@ -102,7 +102,7 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
           </div>
 
           <div>
-            <Label htmlFor="steps" className="text-slate-300">
+            <Label htmlFor="steps" className="text-zinc-300">
               Training Steps
             </Label>
             <NumberInput
@@ -111,12 +111,12 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
               onChange={(v) => {
                 if (v !== undefined) updateConfig('steps', v);
               }}
-              className="bg-slate-900 border-slate-600 text-white rounded-lg"
+              className="bg-black border-zinc-800 text-white rounded-lg"
             />
           </div>
 
           <div>
-            <Label htmlFor="batch_size" className="text-slate-300">
+            <Label htmlFor="batch_size" className="text-zinc-300">
               Batch Size
             </Label>
             <NumberInput
@@ -125,7 +125,7 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
               onChange={(v) => {
                 if (v !== undefined) updateConfig('batch_size', v);
               }}
-              className="bg-slate-900 border-slate-600 text-white rounded-lg"
+              className="bg-black border-zinc-800 text-white rounded-lg"
             />
           </div>
 
@@ -136,7 +136,7 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
               onCheckedChange={handleWandbToggle}
               className="data-[state=checked]:bg-green-500"
             />
-            <Label htmlFor="wandb_enable" className="text-slate-300">
+            <Label htmlFor="wandb_enable" className="text-zinc-300">
               Enable Weights & Biases
             </Label>
           </div>
@@ -150,7 +150,7 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
 
         {config.wandb_enable && (
           <div>
-            <Label htmlFor="wandb_project" className="text-slate-300">
+            <Label htmlFor="wandb_project" className="text-zinc-300">
               W&B Project Name
             </Label>
             <Input
@@ -160,7 +160,7 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
                 updateConfig('wandb_project', e.target.value || undefined)
               }
               placeholder="my-robotics-project"
-              className="bg-slate-900 border-slate-600 text-white rounded-lg"
+              className="bg-black border-zinc-800 text-white rounded-lg"
             />
           </div>
         )}

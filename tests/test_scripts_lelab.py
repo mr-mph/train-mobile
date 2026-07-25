@@ -286,15 +286,17 @@ def test_dev_launcher_builds_expected_subprocess_commands(
         launcher._run_dev(no_open=True)
 
     assert exc.value.code == 0
-    assert started[0] == (
+    assert started[0][0] == "backend"
+    assert started[0][1][:4] == [launcher.sys.executable, "-m", "uvicorn", "lelab.server:app"]
+    assert "--reload" in started[0][1]
+    assert "--port" in started[0][1]
+    assert started[0][1][started[0][1].index("--port") + 1] == "8001"
+    assert started[0][2] == tmp_path
+    assert started[1] == (
         "frontend",
-        ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "8080"],
+        ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "8000", "--strictPort"],
         frontend,
     )
-    assert started[1][0] == "backend"
-    assert started[1][1][:4] == [launcher.sys.executable, "-m", "uvicorn", "lelab.server:app"]
-    assert "--reload" in started[1][1]
-    assert started[1][2] == tmp_path
     browser_open.assert_not_called()
 
 

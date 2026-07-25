@@ -28,11 +28,11 @@ const HubModelCard: React.FC<Props> = ({ model }) => {
   return (
     <Card
       onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
-      className="bg-slate-800/50 border-slate-700 rounded-xl cursor-pointer hover:border-slate-500 transition-colors"
+      className="bg-black border-zinc-800 rounded-xl cursor-pointer hover:border-zinc-700 transition-colors"
     >
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-sky-400">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-green-400">
             <Upload className="w-3.5 h-3.5" />
             Uploaded
           </div>
@@ -40,7 +40,7 @@ const HubModelCard: React.FC<Props> = ({ model }) => {
             variant="ghost"
             size="icon"
             asChild
-            className="h-7 w-7 text-slate-400 hover:text-white"
+            className="h-7 w-7 text-zinc-400 hover:text-white"
             aria-label="View on Hub"
           >
             <a
@@ -59,11 +59,11 @@ const HubModelCard: React.FC<Props> = ({ model }) => {
             title={model.repo_id}
           >
             {model.private ? (
-              <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <Lock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
             ) : null}
             <span className="truncate">{shortName}</span>
           </div>
-          <div className="text-xs text-slate-400 truncate" title={model.repo_id}>
+          <div className="text-xs text-zinc-400 truncate" title={model.repo_id}>
             {model.repo_id} · updated {relativeTime(model.last_modified)}
           </div>
         </div>

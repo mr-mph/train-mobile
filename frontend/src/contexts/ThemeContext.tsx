@@ -1,4 +1,3 @@
-
 import { createContext, ReactNode, useState, useEffect, useCallback, useMemo } from "react";
 
 export type Theme = "dark" | "light" | "system";
@@ -9,7 +8,7 @@ export interface ThemeProviderState {
 }
 
 const initialState: ThemeProviderState = {
-  theme: "system",
+  theme: "dark",
   setTheme: () => null,
 };
 
@@ -22,42 +21,27 @@ interface ThemeProviderProps {
   storageKey?: string;
 }
 
+/** TrainMobile is dark-only (black background + green highlights). */
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
   storageKey = "vite-ui-theme",
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
-  );
+  const [theme] = useState<Theme>("dark");
 
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove("light", "dark");
+    root.classList.remove("light");
+    root.classList.add("dark");
+    localStorage.setItem(storageKey, "dark");
+  }, [storageKey]);
 
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light";
-      root.classList.add(systemTheme);
-      return;
-    }
-
-    root.classList.add(theme);
-  }, [theme]);
-
-  const updateTheme = useCallback(
-    (newTheme: Theme) => {
-      localStorage.setItem(storageKey, newTheme);
-      setTheme(newTheme);
-    },
-    [storageKey]
-  );
+  const updateTheme = useCallback(() => {
+    // Theme is locked to dark.
+  }, []);
 
   const value = useMemo(
-    () => ({ theme, setTheme: updateTheme }),
+    () => ({ theme, setTheme: updateTheme as (theme: Theme) => void }),
     [theme, updateTheme]
   );
 

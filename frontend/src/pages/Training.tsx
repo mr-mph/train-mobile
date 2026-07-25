@@ -249,10 +249,10 @@ const ConfigurationMode: React.FC = () => {
 
   if (trainingExtraAvailable === null) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white p-4">
+      <div className="min-h-screen bg-black text-white p-4">
         <div className="max-w-7xl mx-auto">
           <TrainingHeader />
-          <div className="flex items-center justify-center py-24 text-slate-400">
+          <div className="flex items-center justify-center py-24 text-zinc-400">
             <Loader2 className="w-6 h-6 animate-spin mr-3" />
             Checking training environment…
           </div>
@@ -263,7 +263,7 @@ const ConfigurationMode: React.FC = () => {
 
   if (trainingExtraAvailable === false) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white p-4">
+      <div className="min-h-screen bg-black text-white p-4">
         <div className="max-w-7xl mx-auto">
           <TrainingHeader />
           <TrainingExtraGate installHint={trainingExtraInstallHint} />
@@ -274,7 +274,9 @@ const ConfigurationMode: React.FC = () => {
 
   const targetRequiresAuth = trainingConfig.target.runner === "hf_cloud";
   const targetMissingFlavor =
-    trainingConfig.target.runner === "hf_cloud" && !trainingConfig.target.flavor;
+    (trainingConfig.target.runner === "hf_cloud" &&
+      !trainingConfig.target.flavor) ||
+    (trainingConfig.target.runner === "vast" && !trainingConfig.target.offer_id);
   const localBlocked =
     trainingConfig.target.runner === "local" && localJobRunning;
   const startDisabled =
@@ -288,11 +290,13 @@ const ConfigurationMode: React.FC = () => {
     : targetRequiresAuth && !authenticated
     ? "Log in to Hugging Face to use cloud compute"
     : targetMissingFlavor
-    ? "Select a hardware flavor"
+    ? trainingConfig.target.runner === "vast"
+      ? "Select a Vast GPU offer"
+      : "Select a hardware flavor"
     : undefined;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-4">
+    <div className="min-h-screen bg-black text-white p-4">
       <div className="max-w-7xl mx-auto">
         <TrainingHeader />
         <HfAuthBanner />
@@ -518,11 +522,50 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
     }
   };
 
+  const handleSaveModel = async () => {
+    if (!job) return;
+    const checkpoints = await listJobCheckpoints(baseUrl, fetchWithHeaders, job.id).catch(
+      () => [],
+    );
+    const last = checkpoints[checkpoints.length - 1];
+    const policyRef = last?.ref || job.hf_repo_id || job.output_dir;
+    if (!policyRef) {
+      toast({
+        title: "Nothing to save",
+        description: "No checkpoint found yet.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const name = window.prompt("Model name", job.name) || job.name;
+    const r = await fetchWithHeaders(`${baseUrl}/models`, {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        policy_ref: policyRef,
+        source: job.runner === "vast" ? "vast" : job.runner === "hf_cloud" ? "hf" : "local",
+        job_id: job.id,
+        dataset_repo_id: job.config?.dataset_repo_id,
+        steps: job.metrics?.current_step,
+        activate: true,
+      }),
+    });
+    if (!r.ok) {
+      toast({
+        title: "Save failed",
+        description: await r.text(),
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({ title: "Saved to TrainMobile models" });
+  };
+
   if (error && !job) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white p-4">
+      <div className="min-h-screen bg-black text-white p-4">
         <div className="max-w-7xl mx-auto space-y-4">
-          <Button variant="ghost" onClick={() => navigate("/")} className="text-slate-400">
+          <Button variant="ghost" onClick={() => navigate("/")} className="text-zinc-400">
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Jobs
           </Button>
           <p className="text-red-300">Couldn't load job {jobId}: {error}</p>
@@ -533,8 +576,8 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
 
   if (!job) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white p-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-center py-24 text-slate-400">
+      <div className="min-h-screen bg-black text-white p-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-center py-24 text-zinc-400">
           <Loader2 className="w-6 h-6 animate-spin mr-3" /> Loading job…
         </div>
       </div>
@@ -544,22 +587,26 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
   const isRunning = job.state === "running";
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-4">
+    <div className="min-h-screen bg-black text-white p-4">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" onClick={() => navigate("/")} className="text-slate-400 hover:text-white">
+            <Button variant="ghost" onClick={() => navigate("/")} className="text-zinc-400 hover:text-white">
               <ArrowLeft className="w-4 h-4 mr-2" /> Jobs
             </Button>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-semibold text-white">{job.name}</h1>
                 {job.runner === "hf_cloud" ? (
-                  <span className="text-xs px-2 py-0.5 rounded bg-amber-900/40 text-amber-200 border border-amber-700">
+                  <span className="text-xs px-2 py-0.5 rounded bg-green-500 text-green-400 border border-green-700">
                     HF · {job.hf_flavor ?? "cloud"}
                   </span>
+                ) : job.runner === "vast" ? (
+                  <span className="text-xs px-2 py-0.5 rounded bg-green-900/40 text-green-300 border border-green-700">
+                    Vast · {job.hf_flavor ?? "gpu"}
+                  </span>
                 ) : (
-                  <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-200 border border-slate-600">
+                  <span className="text-xs px-2 py-0.5 rounded bg-zinc-900 text-zinc-200 border border-zinc-800">
                     Local
                   </span>
                 )}
@@ -568,7 +615,7 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
                     href={`https://huggingface.co/${job.hf_repo_id}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs text-amber-300 hover:text-amber-200 underline"
+                    className="text-xs text-green-400 hover:text-green-400 underline"
                   >
                     View on Hub ↗
                   </a>
@@ -578,27 +625,37 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
                     href={job.wandb_run_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs text-yellow-300 hover:text-yellow-200 underline"
+                    className="text-xs text-green-400 hover:text-green-400 underline"
                   >
                     View on W&B ↗
                   </a>
                 )}
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-zinc-400">
                 {job.state}
                 {job.error_message ? ` — ${job.error_message}` : ""}
               </p>
             </div>
           </div>
-          {isRunning ? (
-            <Button onClick={handleStop} className="bg-red-500 hover:bg-red-600 text-white">
-              <Square className="w-4 h-4 mr-2" /> Stop
-            </Button>
-          ) : (
-            <Button onClick={handleDelete} variant="ghost" className="text-slate-400 hover:text-white">
-              <Trash2 className="w-4 h-4 mr-2" /> Delete
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {!isRunning && (
+              <Button
+                onClick={handleSaveModel}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                Save model
+              </Button>
+            )}
+            {isRunning ? (
+              <Button onClick={handleStop} className="bg-red-500 hover:bg-red-600 text-white">
+                <Square className="w-4 h-4 mr-2" /> Stop
+              </Button>
+            ) : (
+              <Button onClick={handleDelete} variant="ghost" className="text-zinc-400 hover:text-white">
+                <Trash2 className="w-4 h-4 mr-2" /> Delete
+              </Button>
+            )}
+          </div>
         </div>
 
         <MonitoringStats
@@ -607,10 +664,10 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
           getProgressPercentage={getProgressPercentage}
           formatTime={formatTime}
         />
-        <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4 flex items-center gap-3">
-          <span className="text-sm font-semibold text-slate-300">Run inference</span>
+        <div className="bg-black border border-zinc-800 rounded-lg p-4 flex items-center gap-3">
+          <span className="text-sm font-semibold text-zinc-300">Run inference</span>
           {checkpoints.length === 0 ? (
-            <span className="text-xs text-slate-500">No checkpoints yet — wait for the first save.</span>
+            <span className="text-xs text-zinc-500">No checkpoints yet — wait for the first save.</span>
           ) : (
             <>
               <CheckpointDropdown

@@ -42,8 +42,8 @@ export function InstallTitleIcon({ state }: { state: InstallState }) {
   if (state === "done") return <CheckCircle2 className="w-6 h-6 text-green-400" />;
   if (state === "error") return <XCircle className="w-6 h-6 text-red-400" />;
   if (state === "installing")
-    return <Loader2 className="w-6 h-6 text-sky-400 animate-spin" />;
-  return <AlertTriangle className="w-6 h-6 text-amber-400" />;
+    return <Loader2 className="w-6 h-6 text-green-400 animate-spin" />;
+  return <AlertTriangle className="w-6 h-6 text-green-400" />;
 }
 
 export const InstallProgress: React.FC<InstallProgressProps> = ({
@@ -77,16 +77,16 @@ export const InstallProgress: React.FC<InstallProgressProps> = ({
     <>
       {state === "idle" && (
         <>
-          <p className="text-slate-300">{idleDescription}</p>
+          <p className="text-zinc-300">{idleDescription}</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 font-mono">
+            <code className="flex-1 bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 font-mono">
               {installHint}
             </code>
             <Button
               variant="ghost"
               size="icon"
               onClick={handleCopy}
-              className="text-slate-400 hover:text-white"
+              className="text-zinc-400 hover:text-white"
               aria-label="Copy install command"
             >
               <Copy className="w-4 h-4" />
@@ -102,9 +102,9 @@ export const InstallProgress: React.FC<InstallProgressProps> = ({
       )}
 
       {state === "installing" && (
-        <p className="text-slate-300">
+        <p className="text-zinc-300">
           Installing{" "}
-          <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">
+          <code className="px-1 py-0.5 rounded bg-black text-green-400">
             {packageName}
           </code>
           . This usually takes about 10 seconds.
@@ -112,7 +112,7 @@ export const InstallProgress: React.FC<InstallProgressProps> = ({
       )}
 
       {state === "done" && (
-        <div className="space-y-3 text-slate-300">{doneDescription}</div>
+        <div className="space-y-3 text-zinc-300">{doneDescription}</div>
       )}
 
       {state === "error" && (
@@ -120,7 +120,7 @@ export const InstallProgress: React.FC<InstallProgressProps> = ({
           <p className="text-red-300">{error || "Install failed."}</p>
           <Button
             onClick={onRetry}
-            className="bg-slate-700 hover:bg-slate-600 text-white"
+            className="bg-zinc-900 hover:bg-slate-600 text-white"
           >
             Try again
           </Button>
@@ -130,7 +130,7 @@ export const InstallProgress: React.FC<InstallProgressProps> = ({
       {state === "error" && logs.length > 0 && (
         <div
           ref={logBoxRef}
-          className="bg-slate-900 rounded-lg p-3 h-48 overflow-y-auto font-mono text-xs border border-slate-700 text-slate-300 whitespace-pre-wrap break-words"
+          className="bg-black rounded-lg p-3 h-48 overflow-y-auto font-mono text-xs border border-zinc-800 text-zinc-300 whitespace-pre-wrap break-words"
         >
           {logs.map((log, idx) => (
             <div key={idx}>{log.message}</div>
@@ -147,7 +147,7 @@ export const RestartInstructions: React.FC<{ purpose: string }> = ({
   <>
     <p>
       Install complete. Restart{" "}
-      <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">
+      <code className="px-1 py-0.5 rounded bg-black text-green-400">
         lelab
       </code>{" "}
       to enable {purpose}:
@@ -155,18 +155,18 @@ export const RestartInstructions: React.FC<{ purpose: string }> = ({
     <ol className="list-decimal list-inside space-y-2 pl-1">
       <li>
         Press{" "}
-        <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-600 text-xs font-mono text-slate-200">
+        <kbd className="px-1.5 py-0.5 rounded bg-black border border-zinc-800 text-xs font-mono text-zinc-200">
           Ctrl+C
         </kbd>{" "}
         in the terminal running{" "}
-        <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">
+        <code className="px-1 py-0.5 rounded bg-black text-green-400">
           lelab
         </code>
         .
       </li>
       <li>
         Run{" "}
-        <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">
+        <code className="px-1 py-0.5 rounded bg-black text-green-400">
           lelab
         </code>{" "}
         again.

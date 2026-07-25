@@ -45,9 +45,9 @@ const HfAuthDialog: React.FC<HfAuthDialogProps> = ({ open, onOpenChange }) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-gray-900 border-gray-800 text-white">
+      <DialogContent className="bg-black border-zinc-800 text-white">
         <DialogHeader>
-          <DialogTitle className="text-amber-200">
+          <DialogTitle className="text-green-400">
             Hugging Face CLI not configured
           </DialogTitle>
           <DialogDescription className="text-gray-400">
@@ -55,7 +55,7 @@ const HfAuthDialog: React.FC<HfAuthDialogProps> = ({ open, onOpenChange }) => {
             Run this in a terminal:
           </DialogDescription>
         </DialogHeader>
-        <pre className="bg-gray-950 p-3 rounded border border-gray-700 text-xs sm:text-sm overflow-x-auto flex items-center justify-between gap-2">
+        <pre className="bg-black p-3 rounded border border-zinc-800 text-xs sm:text-sm overflow-x-auto flex items-center justify-between gap-2">
           <code className="text-green-400">{auth.loginCommand}</code>
           <button
             type="button"
@@ -75,7 +75,7 @@ const HfAuthDialog: React.FC<HfAuthDialogProps> = ({ open, onOpenChange }) => {
           size="sm"
           onClick={handleRefetch}
           disabled={refetching}
-          className="border-amber-700 bg-transparent text-amber-100 hover:bg-amber-900/40 hover:text-amber-50"
+          className="border-green-700 bg-transparent text-green-400 hover:bg-green-500 hover:text-green-400"
         >
           <RefreshCw
             className={`w-4 h-4 mr-2 ${refetching ? "animate-spin" : ""}`}

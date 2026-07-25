@@ -16,8 +16,9 @@
 LeLab launcher.
 
 Default mode starts FastAPI on :8000 and serves the committed frontend/dist
-bundle from the same process. Dev mode starts Vite on :8080 and uvicorn
---reload on :8000.
+bundle from the same process. Dev mode starts Vite on 0.0.0.0:8000 (public)
+and uvicorn --reload on 127.0.0.1:8001 (proxied by Vite) so phones/tunnels
+hit a single origin.
 """
 
 from __future__ import annotations
@@ -48,9 +49,17 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 FRONTEND_PATH = PROJECT_ROOT / "frontend"
 FRONTEND_DIST = FRONTEND_PATH / "dist"
 FRONTEND_NODE_MODULES = FRONTEND_PATH / "node_modules"
+# Loopback for local-only services (dev API behind Vite proxy).
 HOST = "127.0.0.1"
-BACKEND_PORT = 8000
-FRONTEND_DEV_PORT = 8080
+# Bind the public UI so phones on the LAN can reach the Mac.
+PUBLIC_HOST = "0.0.0.0"
+# Single public port for prod and `lelab --dev`.
+PUBLIC_PORT = 8000
+# Internal uvicorn port in dev (Vite proxies here).
+DEV_API_PORT = 8001
+# Back-compat aliases used by tests / docs references.
+BACKEND_PORT = PUBLIC_PORT
+FRONTEND_DEV_PORT = PUBLIC_PORT
 
 
 def _fail(message: str) -> NoReturn:
@@ -93,11 +102,11 @@ def _find_lelab_pids() -> dict[int, str]:
       1. cmdline runs `uvicorn ... lelab.server`  (the reload supervisor / prod)
       2. an orphaned reload worker (`multiprocessing.spawn`) whose cwd is this
          project
-      3. anything actually LISTENING on :8000 / :8080  (per-process scan, which
+      3. anything actually LISTENING on :8000 / :8001  (per-process scan, which
          is more reliable than the global table on Windows)
     """
     me = os.getpid()
-    ports = {BACKEND_PORT, FRONTEND_DEV_PORT}
+    ports = {PUBLIC_PORT, DEV_API_PORT}
     targets: dict[int, str] = {}
     for proc in psutil.process_iter(["pid", "cmdline"]):
         pid = proc.info["pid"]
@@ -126,14 +135,14 @@ def _find_lelab_pids() -> dict[int, str]:
 
 
 def _run_stop() -> None:
-    """Stop a running LeLab and free :8000 / :8080.
+    """Stop a running LeLab and free :8000 / :8001.
 
     The escape hatch for when a previous run left an orphaned Vite or uvicorn
     process holding the ports.
     """
     targets = _find_lelab_pids()
     if not targets:
-        logger.info("Nothing to stop: no LeLab process found on :%d / :%d.", BACKEND_PORT, FRONTEND_DEV_PORT)
+        logger.info("Nothing to stop: no LeLab process found on :%d / :%d.", PUBLIC_PORT, DEV_API_PORT)
         return
     for pid, reason in targets.items():
         logger.info("Stopping pid %d (%s)...", pid, reason)
@@ -253,7 +262,7 @@ def _terminate_tree(pid: int, timeout: int = 5) -> None:
     Dev mode's children are themselves process trees (npm.cmd -> node -> vite,
     and uvicorn --reload -> reloader -> worker). Signalling only the direct
     child leaves the grandchildren orphaned on Windows, where they keep holding
-    ports 8000/8080 and block the next launch. Walk the whole tree instead.
+    ports 8000/8001 and block the next launch. Walk the whole tree instead.
     """
     try:
         parent = psutil.Process(pid)
@@ -332,18 +341,18 @@ def _monitor_processes(processes: Sequence[tuple[str, subprocess.Popen]]) -> Non
 
 def _run_prod(*, no_open: bool = False, rebuild: bool = False) -> None:
     """Serve built frontend from backend on a single port."""
-    _ensure_port_available("Backend", BACKEND_PORT)
+    _ensure_port_available("Backend", PUBLIC_PORT)
     if rebuild:
         _run_frontend_build()
     _ensure_frontend_dist()
 
-    logger.info("Starting LeLab on http://localhost:%d ...", BACKEND_PORT)
-    threading.Thread(target=_open_browser_when_ready, args=(BACKEND_PORT, no_open), daemon=True).start()
+    logger.info("Starting LeLab on http://localhost:%d ...", PUBLIC_PORT)
+    threading.Thread(target=_open_browser_when_ready, args=(PUBLIC_PORT, no_open), daemon=True).start()
 
     config = uvicorn.Config(
         "lelab.server:app",
-        host=HOST,
-        port=BACKEND_PORT,
+        host=PUBLIC_HOST,
+        port=PUBLIC_PORT,
         log_level="info",
         reload=False,
         timeout_graceful_shutdown=2,
@@ -380,31 +389,20 @@ def _run_prod(*, no_open: bool = False, rebuild: bool = False) -> None:
 
 
 def _run_dev(*, no_open: bool = False) -> None:
-    """Start Vite HMR plus uvicorn reload."""
+    """Start Vite on :8000 (0.0.0.0) proxying uvicorn on :8001."""
     _ensure_frontend_path()
     _require_command("node")
     _require_command("npm")
-    _ensure_port_available("Backend", BACKEND_PORT)
-    _ensure_port_available("Frontend", FRONTEND_DEV_PORT)
+    _ensure_port_available("Frontend", PUBLIC_PORT)
+    _ensure_port_available("Backend", DEV_API_PORT)
     _ensure_frontend_deps()
 
     processes: list[tuple[str, subprocess.Popen]] = []
-    frontend_url = f"http://localhost:{FRONTEND_DEV_PORT}/?api=http://localhost:{BACKEND_PORT}"
+    frontend_url = f"http://localhost:{PUBLIC_PORT}/"
+    api_target = f"http://{HOST}:{DEV_API_PORT}"
 
     try:
-        frontend_process = _start_process(
-            "frontend",
-            ["npm", "run", "dev", "--", "--host", HOST, "--port", str(FRONTEND_DEV_PORT)],
-            FRONTEND_PATH,
-        )
-        processes.append(("frontend", frontend_process))
-        if not _wait_for_port(FRONTEND_DEV_PORT):
-            if frontend_process.poll() is not None:
-                _fail(
-                    f"Frontend exited early with code {frontend_process.returncode}. Check the Vite output above."
-                )
-            _fail(f"Frontend never became ready on http://localhost:{FRONTEND_DEV_PORT}.")
-
+        # Backend first so Vite's proxy has a live target when the UI loads.
         backend_process = _start_process(
             "backend",
             [
@@ -415,7 +413,7 @@ def _run_dev(*, no_open: bool = False) -> None:
                 "--host",
                 HOST,
                 "--port",
-                str(BACKEND_PORT),
+                str(DEV_API_PORT),
                 "--reload",
             ],
             PROJECT_ROOT,
@@ -423,17 +421,44 @@ def _run_dev(*, no_open: bool = False) -> None:
         )
         processes.append(("backend", backend_process))
         # Cold imports (lerobot / cv2 / torch) often exceed 15s on first boot.
-        if not _wait_for_port(BACKEND_PORT, timeout=60):
+        if not _wait_for_port(DEV_API_PORT, timeout=60):
             if backend_process.poll() is not None:
                 _fail(
                     f"Backend exited early with code {backend_process.returncode}. Check the uvicorn output above."
                 )
-            _fail(f"Backend never became ready on http://localhost:{BACKEND_PORT}.")
+            _fail(f"Backend never became ready on http://localhost:{DEV_API_PORT}.")
+
+        frontend_env = os.environ.copy()
+        frontend_env["TRAINMOBILE_API_TARGET"] = api_target
+        frontend_process = _start_process(
+            "frontend",
+            [
+                "npm",
+                "run",
+                "dev",
+                "--",
+                "--host",
+                PUBLIC_HOST,
+                "--port",
+                str(PUBLIC_PORT),
+                "--strictPort",
+            ],
+            FRONTEND_PATH,
+            env=frontend_env,
+        )
+        processes.append(("frontend", frontend_process))
+        if not _wait_for_port(PUBLIC_PORT):
+            if frontend_process.poll() is not None:
+                _fail(
+                    f"Frontend exited early with code {frontend_process.returncode}. Check the Vite output above."
+                )
+            _fail(f"Frontend never became ready on http://localhost:{PUBLIC_PORT}.")
 
         _open_browser_url(frontend_url, no_open=no_open)
         logger.info("Dev mode running. Press Ctrl+C to stop.")
-        logger.info("Frontend: http://localhost:%d", FRONTEND_DEV_PORT)
-        logger.info("Backend:  http://localhost:%d", BACKEND_PORT)
+        logger.info("App (LAN): http://<this-mac>:%d  (bound %s)", PUBLIC_PORT, PUBLIC_HOST)
+        logger.info("App (local): http://localhost:%d", PUBLIC_PORT)
+        logger.info("API (internal, proxied by Vite): %s", api_target)
         _install_signal_handlers()
         _monitor_processes(processes)
     except BaseException:
@@ -447,7 +472,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dev",
         action="store_true",
-        help="Start Vite hot reload on :8080 plus uvicorn --reload on :8000.",
+        help="Start Vite on :8000 (0.0.0.0) with API proxied from uvicorn :8001.",
     )
     parser.add_argument(
         "--rebuild",
@@ -462,7 +487,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stop",
         action="store_true",
-        help="Stop a running LeLab (free ports 8000/8080) and exit.",
+        help="Stop a running LeLab (free ports 8000/8001) and exit.",
     )
     return parser
 

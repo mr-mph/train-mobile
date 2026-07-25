@@ -47,7 +47,7 @@ const ImportModelModal: React.FC<Props> = ({ open, onOpenChange, onImported }) =
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-gray-900 border-gray-800 text-white sm:max-w-[520px] p-8">
+      <DialogContent className="bg-black border-zinc-800 text-white sm:max-w-[520px] p-8">
         <DialogHeader>
           <DialogTitle className="text-white text-center text-2xl font-bold">
             Import a model
@@ -68,7 +68,7 @@ const ImportModelModal: React.FC<Props> = ({ open, onOpenChange, onImported }) =
               value={source}
               onChange={(e) => setSource(e.target.value)}
               placeholder="/path/to/pretrained_model  or  user/my-policy"
-              className="bg-gray-800 border-gray-700 text-white"
+              className="bg-black border-zinc-800 text-white"
             />
           </div>
           <div className="space-y-2">
@@ -80,7 +80,7 @@ const ImportModelModal: React.FC<Props> = ({ open, onOpenChange, onImported }) =
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="My imported policy"
-              className="bg-gray-800 border-gray-700 text-white"
+              className="bg-black border-zinc-800 text-white"
             />
           </div>
 

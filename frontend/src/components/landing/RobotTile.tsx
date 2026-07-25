@@ -45,7 +45,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
   const teleopDisabled = !robot || !robot.is_clean;
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-3 flex flex-col gap-2 relative">
+    <div className="bg-black rounded-lg border border-zinc-800 p-3 flex flex-col gap-2 relative">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           <RobotSelector
@@ -59,7 +59,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
         {status && (
           <p
             className={`text-xs truncate shrink-0 ${
-              robot!.is_clean ? "text-green-400" : "text-amber-400"
+              robot!.is_clean ? "text-green-400" : "text-green-400"
             }`}
           >
             {status}
@@ -109,7 +109,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
                 className={`w-full ${
                   teleopDisabled
                     ? "bg-red-500/30 hover:bg-red-500/30 text-red-200 cursor-not-allowed"
-                    : "bg-yellow-500 hover:bg-yellow-600 text-white"
+                    : "bg-green-500 hover:bg-green-600 text-white"
                 }`}
               >
                 Teleoperation
@@ -124,7 +124,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
 
       {robot && (
         <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-          <DialogContent className="bg-gray-900 border-gray-800 text-white">
+          <DialogContent className="bg-black border-zinc-800 text-white">
             <DialogHeader>
               <DialogTitle>Delete robot config?</DialogTitle>
               <DialogDescription className="text-gray-400">
@@ -135,7 +135,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
             <DialogFooter className="flex gap-2 justify-end">
               <Button
                 variant="outline"
-                className="border-gray-600 text-gray-300"
+                className="border-zinc-800 text-gray-300"
                 onClick={() => setConfirmDelete(false)}
               >
                 Cancel

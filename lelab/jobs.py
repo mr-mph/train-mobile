@@ -48,10 +48,12 @@ JobState = Literal["running", "done", "failed", "interrupted"]
 
 class JobTarget(BaseModel):
     """Where a job should run. `local` ⇒ LocalJobRunner. `hf_cloud` requires
-    a non-empty `flavor` from HfApi.list_jobs_hardware()."""
+    a non-empty `flavor` from HfApi.list_jobs_hardware(). `vast` requires
+    `offer_id` from Vast.ai search."""
 
-    runner: Literal["local", "hf_cloud"] = "local"
+    runner: Literal["local", "hf_cloud", "vast"] = "local"
     flavor: str | None = None
+    offer_id: str | None = None
 
 
 class TrainingMetrics(BaseModel):
@@ -79,7 +81,7 @@ class JobRecord(BaseModel):
     exit_code: int | None = None
     error_message: str | None = None
     metrics: TrainingMetrics = TrainingMetrics()
-    runner: Literal["local", "hf_cloud", "imported"] = "local"
+    runner: Literal["local", "hf_cloud", "imported", "vast"] = "local"
     # PID of the detached subprocess (local runner only); survives uvicorn
     # --reload so a fresh registry can re-attach by tailing the log file.
     process_pid: int | None = None
@@ -801,6 +803,8 @@ class JobRegistry:
         target = target or JobTarget()
         if target.runner == "hf_cloud" and not target.flavor:
             raise ValueError("flavor is required when runner is hf_cloud")
+        if target.runner == "vast" and not target.offer_id:
+            raise ValueError("offer_id is required when runner is vast")
 
         with self._lock:
             # Local trainings are bounded by this machine's GPU/USB resources,
@@ -822,8 +826,8 @@ class JobRegistry:
                 config=config,
                 output_dir=lerobot_output_dir,
                 started_at=time.time(),
-                runner=target.runner,
-                hf_flavor=target.flavor,
+                runner=target.runner if target.runner != "vast" else "vast",
+                hf_flavor=target.flavor or target.offer_id,
             )
 
             job_dir.mkdir(parents=True, exist_ok=True)
@@ -833,6 +837,10 @@ class JobRegistry:
             log_path = _job_log_path(self._output_root, job_id)
             if target.runner == "local":
                 runner = LocalJobRunner(record.metrics, log_file_path=log_path)
+            elif target.runner == "vast":
+                from .runners.vast import VastJobRunner
+
+                runner = VastJobRunner(record.metrics, log_path, target.offer_id)
             else:
                 runner = HfCloudJobRunner(record.metrics, log_path, target.flavor)
 

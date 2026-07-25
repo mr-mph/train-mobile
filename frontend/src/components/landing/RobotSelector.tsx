@@ -71,7 +71,7 @@ const RobotSelector: React.FC<RobotSelectorProps> = ({
           role="combobox"
           aria-expanded={open}
           disabled={isLoading}
-          className="w-full justify-between bg-gray-900 border-gray-700 text-white hover:bg-gray-700 hover:text-white font-normal"
+          className="w-full justify-between bg-black border-zinc-800 text-white hover:bg-zinc-900 hover:text-white font-normal"
         >
           <span className={cn("truncate", selectedName ? "" : "text-gray-400")}>
             {isLoading
@@ -82,11 +82,11 @@ const RobotSelector: React.FC<RobotSelectorProps> = ({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="p-0 bg-gray-800 border-gray-700 text-white"
+        className="p-0 bg-black border-zinc-800 text-white"
         style={{ width: "var(--radix-popover-trigger-width)" }}
         align="start"
       >
-        <Command className="bg-gray-800">
+        <Command className="bg-black">
           <CommandInput
             placeholder="Search or type new name..."
             value={query}
@@ -112,7 +112,7 @@ const RobotSelector: React.FC<RobotSelectorProps> = ({
                     key={name}
                     value={name}
                     onSelect={() => handlePickExisting(name)}
-                    className="text-white aria-selected:bg-gray-700"
+                    className="text-white aria-selected:bg-zinc-900"
                   >
                     <Check
                       className={cn(
@@ -130,7 +130,7 @@ const RobotSelector: React.FC<RobotSelectorProps> = ({
             type="button"
             onClick={handleCreate}
             disabled={createDisabled}
-            className="flex w-full items-center gap-2 border-t border-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:text-gray-500 disabled:hover:bg-transparent"
+            className="flex w-full items-center gap-2 border-t border-zinc-800 px-3 py-2 text-sm text-white hover:bg-zinc-900 disabled:cursor-not-allowed disabled:text-gray-500 disabled:hover:bg-transparent"
           >
             <Plus className="h-4 w-4" />
             {createLabel}

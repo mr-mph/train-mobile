@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import VisualizerPanel from "@/components/control/VisualizerPanel";
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import TeleopCameraPanel from "@/components/control/TeleopCameraPanel";
 import { useToast } from "@/hooks/use-toast";
 import { useApi } from "@/contexts/ApiContext";
@@ -10,9 +11,6 @@ const TeleoperationPage = () => {
   const { toast } = useToast();
   const { baseUrl, fetchWithHeaders } = useApi();
 
-  // Stop teleoperation exactly once, however the user leaves, so the back
-  // button, an in-app link, and the unmount safety net can't double-stop or
-  // double-toast.
   const stoppedRef = useRef(false);
   const stopTeleoperation = useCallback(async () => {
     if (stoppedRef.current) return;
@@ -33,21 +31,12 @@ const TeleoperationPage = () => {
     }
   }, [baseUrl, fetchWithHeaders, toast]);
 
-  // Cover every exit path so a session can't keep running and block the next
-  // start with "already active":
-  //   - the back button awaits stopTeleoperation() then navigates (below);
-  //   - any other in-app navigation unmounts this component → stop via cleanup;
-  //   - a browser-level leave (URL change, reload, tab close) never runs React
-  //     cleanup, so `pagehide` fires a keepalive stop that survives the unload
-  //     and stashes a flag the next page reads to confirm the clean disconnect.
-  //     It uses a bare fetch (no JSON Content-Type) so the request stays a CORS
-  //     "simple request" and isn't dropped to a preflight mid-unload.
   useEffect(() => {
     const handlePageHide = () => {
       try {
         sessionStorage.setItem("lelab:teleop-stopped", "1");
       } catch {
-        /* sessionStorage may be unavailable; the stop below still runs */
+        /* ignore */
       }
       fetch(`${baseUrl}/stop-teleoperation`, {
         method: "POST",
@@ -68,14 +57,28 @@ const TeleoperationPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-2 sm:p-4">
-      <div className="w-full h-[95vh] flex">
-        <VisualizerPanel
-          onGoBack={handleGoBack}
-          className="lg:w-full"
-          rightSlot={<TeleopCameraPanel />}
-        />
-      </div>
+    <div
+      className="min-h-screen bg-black text-white flex flex-col"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
+    >
+      <header className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleGoBack}
+          className="text-gray-400 hover:text-white hover:bg-black flex-shrink-0"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <h1 className="text-lg font-medium text-gray-200">Teleoperation</h1>
+      </header>
+
+      <main className="flex-1 flex items-center justify-center p-4 overflow-y-auto">
+        <TeleopCameraPanel />
+      </main>
     </div>
   );
 };

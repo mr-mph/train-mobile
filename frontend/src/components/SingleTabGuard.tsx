@@ -3,9 +3,26 @@ import { Button } from "@/components/ui/button";
 
 type Peer = { id: string; openedAt: number; lastSeen: number };
 
-const CHANNEL = "lelab-tabs-v1";
+const CHANNEL = "trainmobile-tabs-v1";
 const HEARTBEAT_MS = 1000;
 const PEER_TIMEOUT_MS = 3000;
+
+/** Works on LAN HTTP too — `crypto.randomUUID` needs a secure context. */
+const newTabId = (): string => {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function") {
+    return c.randomUUID();
+  }
+  if (c && typeof c.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    c.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
 
 const SingleTabGuard = ({ children }: { children: ReactNode }) => {
   const [isPrimary, setIsPrimary] = useState(true);
@@ -39,7 +56,7 @@ const SingleTabGuard = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    myIdRef.current = crypto.randomUUID();
+    myIdRef.current = newTabId();
     myOpenedAtRef.current = Date.now();
 
     const channel = new BroadcastChannel(CHANNEL);
@@ -119,7 +136,7 @@ const SingleTabGuard = ({ children }: { children: ReactNode }) => {
         >
           <div className="mx-4 max-w-md space-y-4 rounded-lg border bg-background p-6 text-center shadow-lg">
             <h2 className="text-lg font-semibold">
-              LeLab is already open in another tab
+              TrainMobile is already open in another tab
             </h2>
             <p className="text-sm text-muted-foreground">
               Only one tab can control the robot at a time. Switch back to the

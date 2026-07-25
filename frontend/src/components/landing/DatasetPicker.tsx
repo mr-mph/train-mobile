@@ -92,14 +92,14 @@ const DatasetPicker: React.FC<DatasetPickerProps> = ({
       key={d.repo_id}
       value={d.repo_id}
       onSelect={() => handlePick(d)}
-      className="text-white aria-selected:bg-gray-700"
+      className="text-white aria-selected:bg-zinc-900"
     >
       <span className="flex-1 truncate">{d.repo_id}</span>
       {d.source === "both" && (
         <span className="text-xs text-gray-400 mr-2">on Hub</span>
       )}
       {d.private && (
-        <span className="text-xs text-amber-400">private</span>
+        <span className="text-xs text-green-400">private</span>
       )}
     </CommandItem>
   );
@@ -108,10 +108,10 @@ const DatasetPicker: React.FC<DatasetPickerProps> = ({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
-        className="w-[320px] p-0 bg-gray-800 border-gray-700 text-white"
+        className="w-[320px] p-0 bg-black border-zinc-800 text-white"
         align="end"
       >
-        <Command className="bg-gray-800">
+        <Command className="bg-black">
           <CommandInput
             placeholder="Search, type a new name, or org/name…"
             value={query}
@@ -151,7 +151,7 @@ const DatasetPicker: React.FC<DatasetPickerProps> = ({
                 <CommandItem
                   value={`__open__${trimmed}`}
                   onSelect={handleOpenCustom}
-                  className="text-white aria-selected:bg-gray-700"
+                  className="text-white aria-selected:bg-zinc-900"
                 >
                   <ExternalLink className="mr-2 h-4 w-4" />
                   Open &quot;{trimmed}&quot; in viewer
@@ -163,7 +163,7 @@ const DatasetPicker: React.FC<DatasetPickerProps> = ({
             type="button"
             onClick={handleFooterCreate}
             disabled={createDisabled}
-            className="flex w-full items-center gap-2 border-t border-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:text-gray-500 disabled:hover:bg-transparent"
+            className="flex w-full items-center gap-2 border-t border-zinc-800 px-3 py-2 text-sm text-white hover:bg-zinc-900 disabled:cursor-not-allowed disabled:text-gray-500 disabled:hover:bg-transparent"
           >
             <Plus className="h-4 w-4" />
             {createLabel}

@@ -94,15 +94,15 @@ const UpdateNotice = () => {
       }}
     >
       <DialogContent
-        className="bg-slate-800 border-slate-700 text-white max-w-lg"
+        className="bg-black border-zinc-800 text-white max-w-lg"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3 text-white">
-            <Sparkles className="w-5 h-5 text-amber-400" />
-            LeLab update available
+            <Sparkles className="w-5 h-5 text-green-400" />
+            TrainMobile update available
           </DialogTitle>
-          <DialogDescription className="text-slate-300">
+          <DialogDescription className="text-zinc-300">
             You're {behind} 😱.
             <br />
             Update to get the latest fixes and features 🤗.
@@ -113,7 +113,7 @@ const UpdateNotice = () => {
                   href={status.compare_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sky-300 underline hover:text-sky-200"
+                  className="text-green-400 underline hover:text-green-400"
                 >
                   See what changed
                 </a>
@@ -125,13 +125,13 @@ const UpdateNotice = () => {
 
         <div className="space-y-4">
           <Collapsible>
-            <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white transition-colors">
+            <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs font-medium text-zinc-300 hover:text-white transition-colors">
               <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
               Or update manually
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-2">
               <div className="flex items-start gap-2">
-                <code className="min-w-0 flex-1 px-2 py-1.5 rounded bg-slate-900 text-sky-300 text-xs break-all whitespace-pre-wrap">
+                <code className="min-w-0 flex-1 px-2 py-1.5 rounded bg-black text-green-400 text-xs break-all whitespace-pre-wrap">
                   {status.update_command}
                 </code>
                 <Button
@@ -139,7 +139,7 @@ const UpdateNotice = () => {
                   size="icon"
                   onClick={copyCommand}
                   title="Copy command"
-                  className="shrink-0 bg-slate-900 border-slate-600 text-white hover:bg-slate-700"
+                  className="shrink-0 bg-black border-zinc-800 text-white hover:bg-zinc-900"
                 >
                   <Copy className="w-4 h-4" />
                 </Button>
@@ -148,17 +148,17 @@ const UpdateNotice = () => {
           </Collapsible>
 
           {output && (
-            <pre className="max-h-40 overflow-auto rounded bg-slate-900 p-2 text-xs text-slate-300 whitespace-pre-wrap">
+            <pre className="max-h-40 overflow-auto rounded bg-black p-2 text-xs text-zinc-300 whitespace-pre-wrap">
               {output}
             </pre>
           )}
 
           <div className="flex items-center justify-between gap-3 pt-1">
-            <label className="flex items-center gap-2 text-sm text-slate-300">
+            <label className="flex items-center gap-2 text-sm text-zinc-300">
               <Checkbox
                 checked={dontAsk}
                 onCheckedChange={(v) => setDontAsk(v === true)}
-                className="border-slate-300 data-[state=checked]:bg-slate-300 data-[state=checked]:text-slate-900"
+                className="border-slate-300 data-[state=checked]:bg-slate-300 data-[state=checked]:text-zinc-900"
               />
               Don't ask me again
             </label>
@@ -167,7 +167,7 @@ const UpdateNotice = () => {
                 variant="ghost"
                 onClick={() => dismiss(dontAsk)}
                 disabled={updating}
-                className="text-slate-300 hover:bg-slate-700 hover:text-white"
+                className="text-zinc-300 hover:bg-zinc-900 hover:text-white"
               >
                 Later
               </Button>

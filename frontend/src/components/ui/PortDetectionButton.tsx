@@ -21,9 +21,9 @@ const PortDetectionButton: React.FC<PortDetectionButtonProps> = ({
       size="sm"
       className={`
         h-8 px-2
-        border-gray-600 hover:border-blue-500
-        text-gray-400 hover:text-blue-400
-        bg-gray-800 hover:bg-gray-700
+        border-zinc-800 hover:border-green-500
+        text-gray-400 hover:text-green-400
+        bg-black hover:bg-zinc-900
         transition-all duration-200
         ${className}
       `}

@@ -8,13 +8,21 @@ interface ApiContextType {
 
 const ApiContext = createContext<ApiContextType | undefined>(undefined);
 
-const STORAGE_KEY = "lelab.apiBaseUrl";
-const DEFAULT_LOCALHOST = "http://localhost:8000";
+const STORAGE_KEY = "trainmobile.apiBaseUrl";
+const LEGACY_STORAGE_KEY = "lelab.apiBaseUrl";
 
-const httpToWs = (url: string): string => url.replace(/^http(s?):/, "ws$1:");
+const httpToWs = (url: string): string => {
+  if (!url) {
+    if (typeof window === "undefined") return "ws://localhost:8000";
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}`;
+  }
+  return url.replace(/^http(s?):/, "ws$1:");
+};
 
+/** Empty string = same-origin (Vite proxy in --dev, or single-origin prod/tunnel). */
 const resolveInitialBaseUrl = (): string => {
-  if (typeof window === "undefined") return DEFAULT_LOCALHOST;
+  if (typeof window === "undefined") return "";
 
   const fromQuery = new URLSearchParams(window.location.search).get("api");
   if (fromQuery) {
@@ -28,7 +36,28 @@ const resolveInitialBaseUrl = (): string => {
     }
   }
 
-  return window.localStorage.getItem(STORAGE_KEY) || DEFAULT_LOCALHOST;
+  const stored =
+    window.localStorage.getItem(STORAGE_KEY) ||
+    window.localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (stored) {
+    // Ignore stale loopback overrides when opened from another device / tunnel.
+    try {
+      const host = new URL(stored).hostname;
+      const here = window.location.hostname;
+      const storedIsLoopback = host === "localhost" || host === "127.0.0.1";
+      const hereIsLoopback = here === "localhost" || here === "127.0.0.1";
+      if (!(storedIsLoopback && !hereIsLoopback)) {
+        return stored;
+      }
+      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    } catch {
+      return stored;
+    }
+  }
+
+  // Always same-origin in browser (dev Vite proxies API; prod shares :8000).
+  return "";
 };
 
 export const ApiProvider: React.FC<{ children: ReactNode }> = ({

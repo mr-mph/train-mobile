@@ -462,7 +462,7 @@ const Recording = () => {
     currentPhase === "recording"
       ? { dot: "bg-red-500", pill: "bg-red-500/15 text-red-300", timer: "text-green-400", bar: "bg-green-500", button: "bg-green-500 hover:bg-green-600" }
       : currentPhase === "resetting"
-      ? { dot: "bg-orange-500", pill: "bg-orange-500/15 text-orange-300", timer: "text-orange-400", bar: "bg-orange-500", button: "bg-orange-500 hover:bg-orange-600" }
+      ? { dot: "bg-green-500", pill: "bg-green-500/15 text-green-400", timer: "text-green-400", bar: "bg-green-500", button: "bg-green-500 hover:bg-green-500" }
       : { dot: "bg-gray-500", pill: "bg-gray-500/15 text-gray-300", timer: "text-gray-400", bar: "bg-gray-500", button: "bg-gray-500" };
 
   const primaryLabel =
@@ -475,7 +475,10 @@ const Recording = () => {
   const PrimaryIcon = currentPhase === "recording" ? SkipForward : Play;
 
   return (
-    <div className="min-h-screen bg-black text-white p-8">
+    <div
+      className="min-h-screen bg-black text-white p-4 sm:p-8 pb-28 sm:pb-8"
+      style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
+    >
       <div className="max-w-2xl mx-auto">
         <div className="mb-8">
           <Button
@@ -488,7 +491,7 @@ const Recording = () => {
           </Button>
         </div>
 
-        <div className="bg-gray-900 rounded-lg border border-gray-700 p-8">
+        <div className="bg-black rounded-lg border border-zinc-800 p-8">
           <div className="flex justify-end items-center gap-4 mb-6 text-sm text-gray-400">
             <span aria-label={`Episode ${currentEpisode} of ${totalEpisodes}`}>
               Episode <span className="text-white font-semibold">{currentEpisode}</span> / {totalEpisodes}
@@ -501,7 +504,7 @@ const Recording = () => {
               size="icon"
               onClick={toggleMute}
               aria-label={muted ? "Unmute" : "Mute"}
-              className="h-8 w-8 text-gray-400 hover:text-white hover:bg-gray-800"
+              className="h-8 w-8 text-gray-400 hover:text-white hover:bg-black"
             >
               {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
             </Button>
@@ -510,7 +513,7 @@ const Recording = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-gray-400 hover:text-white hover:bg-gray-800"
+                  className="h-8 w-8 text-gray-400 hover:text-white hover:bg-black"
                   aria-label="More actions"
                 >
                   <MoreHorizontal className="w-5 h-5" />
@@ -519,12 +522,12 @@ const Recording = () => {
               <DropdownMenuContent
                 align="end"
                 onCloseAutoFocus={(e) => e.preventDefault()}
-                className="bg-gray-900 border-gray-700 text-white"
+                className="bg-black border-zinc-800 text-white"
               >
                 <DropdownMenuItem
                   onClick={handleRerecordEpisode}
                   disabled={!backendStatus.available_controls.rerecord_episode}
-                  className="focus:bg-gray-800 focus:text-white"
+                  className="focus:bg-black focus:text-white"
                 >
                   <RotateCcw className="w-4 h-4 mr-2" />
                   Re-record episode
@@ -532,7 +535,7 @@ const Recording = () => {
                 <DropdownMenuItem
                   onClick={requestStopRecording}
                   disabled={!backendStatus.available_controls.stop_recording}
-                  className="text-red-400 focus:bg-gray-800 focus:text-red-300"
+                  className="text-red-400 focus:bg-black focus:text-red-300"
                 >
                   <Square className="w-4 h-4 mr-2" />
                   Stop recording
@@ -561,7 +564,7 @@ const Recording = () => {
             </div>
           </div>
 
-          <div className="w-full bg-gray-800 rounded-full h-1.5 mb-8">
+          <div className="w-full bg-black rounded-full h-1.5 mb-8">
             <div
               className={`h-1.5 rounded-full transition-all duration-500 ${phaseColor.bar}`}
               style={{
@@ -582,7 +585,9 @@ const Recording = () => {
             <PrimaryIcon className="w-5 h-5 mr-2" />
             {primaryLabel}
             {currentPhase !== "completed" && (
-              <span className="ml-3 px-2 py-0.5 rounded text-xs font-mono bg-black/30 text-white/70">SPACE / →</span>
+              <span className="ml-3 px-2 py-0.5 rounded text-xs font-mono bg-black/30 text-white/70 hidden sm:inline">
+                SPACE / →
+              </span>
             )}
           </Button>
 
@@ -594,8 +599,47 @@ const Recording = () => {
         </div>
       </div>
 
+      {/* Sticky mobile episode controls */}
+      <div
+        className="fixed bottom-0 inset-x-0 z-40 border-t border-zinc-800 bg-black/95 p-3 sm:hidden"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+      >
+        <div className="flex gap-2 max-w-lg mx-auto">
+          <Button
+            onClick={handleRerecordEpisode}
+            disabled={!backendStatus.available_controls.rerecord_episode}
+            variant="outline"
+            className="flex-1 h-14 border-zinc-800"
+          >
+            <RotateCcw className="w-5 h-5 mr-2" />
+            Re-record
+          </Button>
+          <Button
+            onClick={handleExitEarly}
+            disabled={
+              !backendStatus.available_controls.exit_early ||
+              optimisticPhase !== null ||
+              currentPhase === "completed"
+            }
+            className={`flex-[2] h-14 text-white font-semibold ${phaseColor.button}`}
+          >
+            <PrimaryIcon className="w-5 h-5 mr-2" />
+            {primaryLabel}
+          </Button>
+          <Button
+            onClick={requestStopRecording}
+            disabled={!backendStatus.available_controls.stop_recording}
+            variant="destructive"
+            className="h-14 w-14 p-0"
+            aria-label="Stop"
+          >
+            <Square className="w-5 h-5" />
+          </Button>
+        </div>
+      </div>
+
       <AlertDialog open={showStopConfirm} onOpenChange={setShowStopConfirm}>
-        <AlertDialogContent className="bg-gray-900 border-gray-700 text-white">
+        <AlertDialogContent className="bg-black border-zinc-800 text-white">
           <AlertDialogHeader>
             <AlertDialogTitle>Stop recording?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-400">
@@ -603,7 +647,7 @@ const Recording = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-gray-800 border-gray-700 text-white hover:bg-gray-700">
+            <AlertDialogCancel className="bg-black border-zinc-800 text-white hover:bg-zinc-900">
               Keep recording
             </AlertDialogCancel>
             <AlertDialogAction

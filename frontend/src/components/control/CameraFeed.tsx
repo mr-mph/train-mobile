@@ -53,8 +53,8 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   const showVideo = !!src && !hasError;
 
   return (
-    <div className={cn("bg-gray-900 overflow-hidden", className)}>
-      <div className={cn("aspect-[4/3] bg-gray-800 relative", frameClassName)}>
+    <div className={cn("bg-black overflow-hidden", className)}>
+      <div className={cn("aspect-[4/3] bg-black relative", frameClassName)}>
         {showVideo ? (
           <img
             src={src}
@@ -76,7 +76,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         )}
       </div>
       {label && (
-        <div className="p-2 text-sm text-gray-300 truncate border-t border-gray-800">
+        <div className="p-2 text-sm text-gray-300 truncate border-t border-zinc-800">
           {label}
         </div>
       )}

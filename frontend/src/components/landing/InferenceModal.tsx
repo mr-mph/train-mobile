@@ -40,7 +40,7 @@ const CameraThumbnail: React.FC<{
 }> = ({ cameraIndex, paused }) => {
   if (paused || cameraIndex == null) {
     return (
-      <div className="w-32 h-24 bg-gray-800 rounded border border-gray-700 flex flex-col items-center justify-center">
+      <div className="w-32 h-24 bg-black rounded border border-zinc-800 flex flex-col items-center justify-center">
         <VideoOff className="w-5 h-5 text-gray-500 mb-1" />
         <span className="text-[10px] text-gray-500">
           {paused ? "Released" : "No preview"}
@@ -54,7 +54,7 @@ const CameraThumbnail: React.FC<{
       width={320}
       height={240}
       fps={15}
-      className="w-32 rounded border border-gray-700"
+      className="w-32 rounded border border-zinc-800"
       frameClassName="aspect-auto h-24"
     />
   );
@@ -254,7 +254,7 @@ const InferenceModal: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-gray-900 border-gray-800 text-white sm:max-w-[600px] p-8 max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-black border-zinc-800 text-white sm:max-w-[600px] p-8 max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex justify-center items-center mb-4">
             <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
@@ -273,18 +273,18 @@ const InferenceModal: React.FC<Props> = ({
           </DialogDescription>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+            <h3 className="text-lg font-semibold text-white border-b border-zinc-800 pb-2">
               Robot Configuration
             </h3>
             {!robot ? (
-              <Alert className="bg-amber-900/40 border-amber-700 text-amber-100">
+              <Alert className="bg-green-500 border-green-700 text-green-400">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
                   Select and configure a robot on the Landing page first.
                 </AlertDescription>
               </Alert>
             ) : !robot.is_clean ? (
-              <Alert className="bg-amber-900/40 border-amber-700 text-amber-100">
+              <Alert className="bg-green-500 border-green-700 text-green-400">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
                   <strong>{robot.name}</strong> is missing a calibration.
@@ -294,7 +294,7 @@ const InferenceModal: React.FC<Props> = ({
             ) : (
               <div className="flex items-center gap-2 text-sm">
                 <CheckCircle className="w-4 h-4 text-green-400" />
-                <span className="text-slate-200">
+                <span className="text-zinc-200">
                   Running on <strong>{robot.name}</strong>
                 </span>
               </div>
@@ -302,11 +302,11 @@ const InferenceModal: React.FC<Props> = ({
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+            <h3 className="text-lg font-semibold text-white border-b border-zinc-800 pb-2">
               Checkpoint
             </h3>
             {checkpoints.length === 0 ? (
-              <Alert className="bg-amber-900/40 border-amber-700 text-amber-100">
+              <Alert className="bg-green-500 border-green-700 text-green-400">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
                   No checkpoints available for this job yet.
@@ -322,7 +322,7 @@ const InferenceModal: React.FC<Props> = ({
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+            <h3 className="text-lg font-semibold text-white border-b border-zinc-800 pb-2">
               Run parameters
             </h3>
             {policyConfig?.requires_task ? (
@@ -335,7 +335,7 @@ const InferenceModal: React.FC<Props> = ({
                   value={task}
                   onChange={(e) => setTask(e.target.value)}
                   placeholder="e.g., pick up the red block"
-                  className="bg-gray-800 border-gray-700 text-white"
+                  className="bg-black border-zinc-800 text-white"
                 />
                 <p className="text-xs text-gray-500">
                   This policy is language-conditioned ({policyConfig.policy_type}).
@@ -353,17 +353,17 @@ const InferenceModal: React.FC<Props> = ({
                 onChange={(v) => {
                   if (v !== undefined) setDurationS(v);
                 }}
-                className="bg-gray-800 border-gray-700 text-white"
+                className="bg-black border-zinc-800 text-white"
               />
             </div>
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+            <h3 className="text-lg font-semibold text-white border-b border-zinc-800 pb-2">
               Cameras
             </h3>
             {policyConfigLoading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-400">
+              <div className="flex items-center gap-2 text-sm text-zinc-400">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Reading policy config…
               </div>
@@ -405,10 +405,10 @@ const InferenceModal: React.FC<Props> = ({
                         value={value != null ? String(value) : undefined}
                         onValueChange={(v) => onCameraBindingChange(name, v)}
                       >
-                        <SelectTrigger className="bg-gray-800 border-gray-700 text-white w-56">
+                        <SelectTrigger className="bg-black border-zinc-800 text-white w-56">
                           <SelectValue placeholder="Select a camera" />
                         </SelectTrigger>
-                        <SelectContent className="bg-gray-900 border-gray-700 text-white">
+                        <SelectContent className="bg-black border-zinc-800 text-white">
                           {availableCameras.length === 0 ? (
                             <div className="px-2 py-1.5 text-xs text-gray-500">
                               No cameras detected

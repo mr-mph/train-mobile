@@ -1,0 +1,11 @@
+{
+  "name": "TrainMobile",
+  "short_name": "TrainMobile",
+  "description": "Teleop, record, train, and rollout SO-101 arms from your phone.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "any",
+  "icons": []
+}

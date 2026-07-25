@@ -149,7 +149,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
       case "detecting":
         return (
           <div className="space-y-6 text-center">
-            <Loader2 className="w-16 h-16 text-blue-500 mx-auto animate-spin" />
+            <Loader2 className="w-16 h-16 text-green-400 mx-auto animate-spin" />
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-white">
                 Unplug the {robotType} arm
@@ -179,7 +179,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
               <h3 className="text-lg font-semibold text-white">
                 Port Detected
               </h3>
-              <p className="text-xl font-mono text-green-400 bg-gray-800 px-4 py-2 rounded inline-block">
+              <p className="text-xl font-mono text-green-400 bg-black px-4 py-2 rounded inline-block">
                 {detectedPort}
               </p>
             </div>
@@ -201,7 +201,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
             <div className="flex gap-4 justify-center">
               <Button
                 onClick={handleRetry}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-2"
+                className="bg-green-500 hover:bg-green-600 text-white px-8 py-2"
               >
                 Try Again
               </Button>
@@ -223,7 +223,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-gray-900 border-gray-800 text-white sm:max-w-[500px] p-8">
+      <DialogContent className="bg-black border-zinc-800 text-white sm:max-w-[500px] p-8">
         <DialogHeader>
           <DialogTitle className="text-white text-center text-xl font-bold">
             Port Detection

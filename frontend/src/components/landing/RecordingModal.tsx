@@ -73,7 +73,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-gray-900 border-gray-800 text-white sm:max-w-[600px] p-8 max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-black border-zinc-800 text-white sm:max-w-[600px] p-8 max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex justify-center items-center mb-4">
             <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
@@ -91,11 +91,11 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
 
           <div className="grid grid-cols-1 gap-6">
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+              <h3 className="text-lg font-semibold text-white border-b border-zinc-800 pb-2">
                 Robot Configuration
               </h3>
               {!robot ? (
-                <Alert className="bg-amber-900/40 border-amber-700 text-amber-100">
+                <Alert className="bg-green-500 border-green-700 text-green-400">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
                     Select and configure a robot on the Landing page before
@@ -103,7 +103,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                   </AlertDescription>
                 </Alert>
               ) : !robot.is_clean ? (
-                <Alert className="bg-amber-900/40 border-amber-700 text-amber-100">
+                <Alert className="bg-green-500 border-green-700 text-green-400">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
                     <strong>{robot.name}</strong> is missing a calibration.
@@ -113,7 +113,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
               ) : (
                 <div className="flex items-center gap-2 text-sm">
                   <CheckCircle className="w-4 h-4 text-green-400" />
-                  <span className="text-slate-200">
+                  <span className="text-zinc-200">
                     Recording with <strong>{robot.name}</strong>
                   </span>
                 </div>
@@ -121,7 +121,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+              <h3 className="text-lg font-semibold text-white border-b border-zinc-800 pb-2">
                 Dataset Configuration
               </h3>
               <div className="grid grid-cols-1 gap-4">
@@ -141,7 +141,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                       )
                     }
                     placeholder="my_dataset"
-                    className="bg-gray-800 border-gray-700 text-white"
+                    className="bg-black border-zinc-800 text-white"
                   />
                   <p className="text-xs text-gray-500">
                     Letters, numbers, <code>.</code> <code>_</code>{" "}
@@ -157,7 +157,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                         </span>
                       </p>
                     ) : auth.status === "unauthenticated" ? (
-                      <p className="text-xs text-amber-400/80">
+                      <p className="text-xs text-green-400/80">
                         Log in to Hugging Face to set the repository owner.
                       </p>
                     ) : null)}
@@ -174,7 +174,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                     value={singleTask}
                     onChange={(e) => setSingleTask(e.target.value)}
                     placeholder="e.g., pick up the red block and place it on the blue square"
-                    className="bg-gray-800 border-gray-700 text-white"
+                    className="bg-black border-zinc-800 text-white"
                   />
                 </div>
                 <div className="space-y-2">
@@ -192,7 +192,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                     onChange={(v) => {
                       if (v !== undefined) setNumEpisodes(v);
                     }}
-                    className="bg-gray-800 border-gray-700 text-white"
+                    className="bg-black border-zinc-800 text-white"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -210,7 +210,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                       onChange={(v) => {
                         if (v !== undefined) setEpisodeTimeS(v);
                       }}
-                      className="bg-gray-800 border-gray-700 text-white"
+                      className="bg-black border-zinc-800 text-white"
                     />
                   </div>
                   <div className="space-y-2">
@@ -227,7 +227,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                       onChange={(v) => {
                         if (v !== undefined) setResetTimeS(v);
                       }}
-                      className="bg-gray-800 border-gray-700 text-white"
+                      className="bg-black border-zinc-800 text-white"
                     />
                   </div>
                 </div>
@@ -248,7 +248,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
             </div>
 
             <Collapsible className="space-y-4 group">
-              <CollapsibleTrigger className="flex items-center justify-between w-full text-lg font-semibold text-white border-b border-gray-700 pb-2">
+              <CollapsibleTrigger className="flex items-center justify-between w-full text-lg font-semibold text-white border-b border-zinc-800 pb-2">
                 <span>Advanced Parameters</span>
                 <ChevronDown className="w-4 h-4 transition-transform group-data-[state=open]:rotate-180" />
               </CollapsibleTrigger>

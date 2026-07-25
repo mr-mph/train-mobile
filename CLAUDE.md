@@ -21,8 +21,8 @@ pip install -e .
 Run servers (entry point defined in [pyproject.toml](pyproject.toml)):
 
 ```bash
-lelab          # uvicorn on :8000, serves built frontend at /, opens browser
-lelab --dev    # spawns Vite dev (:8080) + uvicorn --reload (:8000), opens browser to :8080
+lelab          # uvicorn on 0.0.0.0:8000, serves built frontend at /, opens browser
+lelab --dev    # Vite on 0.0.0.0:8000 (proxies API) + uvicorn --reload on :8001
 ```
 
 When `frontend/**` (excluding `frontend/dist/**`) changes on `main`, [`.github/workflows/build_frontend.yml`](.github/workflows/build_frontend.yml) auto-rebuilds `frontend/dist/` and commits it back. You can still build locally before committing if you want to test the production bundle, but it's no longer required. `lelab --dev` serves directly from Vite, no rebuild needed.

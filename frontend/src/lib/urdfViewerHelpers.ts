@@ -51,8 +51,8 @@ export function createUrdfViewer(
 
   // Set initial viewer properties
   viewer.setAttribute("up", "Z");
-  setViewerColor(viewer, isDarkMode ? "#2c2b3a" : "#eff4ff");
-  viewer.setAttribute("highlight-color", isDarkMode ? "#df6dd4" : "#b05ffe");
+  setViewerColor(viewer, "#000000");
+  viewer.setAttribute("highlight-color", "#22c55e");
   viewer.setAttribute("auto-redraw", "true");
   // viewer.setAttribute("display-shadow", ""); // Enable shadows
 
@@ -204,16 +204,8 @@ export function setViewerColor(viewer: URDFViewerElement, color: string): void {
  */
 export function updateViewerTheme(
   viewer: URDFViewerElement,
-  isDarkMode: boolean
+  _isDarkMode: boolean
 ): void {
-  // Update the ambient color
-  setViewerColor(viewer, isDarkMode ? "#2c2b3a" : "#eff4ff");
-  viewer.setAttribute("highlight-color", isDarkMode ? "#df6dd4" : "#b05ffe");
-
-  // // Update the ambient light intensity based on theme
-  // viewer.scene.traverse((object) => {
-  //   if (object instanceof AmbientLight) {
-  //     object.intensity = isDarkMode ? 0.4 : 0.6; // Brighter in light mode
-  //   }
-  // });
+  setViewerColor(viewer, "#000000");
+  viewer.setAttribute("highlight-color", "#22c55e");
 }

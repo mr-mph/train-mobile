@@ -264,7 +264,7 @@ const Upload = () => {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
           <p className="text-lg">Loading dataset information...</p>
         </div>
       </div>
@@ -303,7 +303,7 @@ const Upload = () => {
             {uploadSuccess ? (
               <CheckCircle className="w-8 h-8 text-green-500" />
             ) : (
-              <Database className="w-8 h-8 text-blue-500" />
+              <Database className="w-8 h-8 text-green-400" />
             )}
             <h1 className="text-3xl font-bold">
               {uploadSuccess ? "Upload Complete" : "Dataset Upload"}
@@ -335,7 +335,7 @@ const Upload = () => {
                     : `https://huggingface.co${spacePath}`;
                   window.open(target, "_blank", "noopener,noreferrer");
                 }}
-                className="bg-blue-500 hover:bg-blue-600 text-white"
+                className="bg-green-500 hover:bg-green-600 text-white"
               >
                 <ExternalLink className="w-4 h-4 mr-2" />
                 View on HuggingFace Hub
@@ -346,7 +346,7 @@ const Upload = () => {
                     state: { datasetRepoId: datasetInfo.dataset_repo_id },
                   })
                 }
-                className="bg-purple-500 hover:bg-purple-600 text-white"
+                className="bg-green-500 hover:bg-green-600 text-white"
               >
                 Start Training
               </Button>
@@ -358,7 +358,7 @@ const Upload = () => {
         {!uploadSuccess && (
           <>
             {/* Dataset Summary */}
-            <div className="bg-gray-900 rounded-lg p-6 border border-gray-700 mb-8">
+            <div className="bg-black rounded-lg p-6 border border-zinc-800 mb-8">
               <h2 className="text-xl font-semibold text-white mb-4">
                 Dataset Summary
               </h2>
@@ -404,7 +404,7 @@ const Upload = () => {
 
             {/* Upload Configuration */}
             {!isAlreadyOnHub && (
-              <div className="bg-gray-900 rounded-lg p-6 border border-gray-700 mb-8">
+              <div className="bg-black rounded-lg p-6 border border-zinc-800 mb-8">
                 <h2 className="text-xl font-semibold text-white mb-6">
                   Upload Configuration
                 </h2>
@@ -420,7 +420,7 @@ const Upload = () => {
                       value={tagsInput}
                       onChange={(e) => setTagsInput(e.target.value)}
                       placeholder="robotics, lerobot, manipulation"
-                      className="bg-gray-800 border-gray-600 text-white"
+                      className="bg-black border-zinc-800 text-white"
                     />
                     <p className="text-sm text-gray-500 mt-1">
                       Tags help others discover your dataset on HuggingFace Hub
@@ -464,7 +464,7 @@ const Upload = () => {
               {isAlreadyOnHub ? (
                 <Button
                   onClick={() => openInHubViewer(datasetInfo.dataset_repo_id)}
-                  className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-8 text-lg"
+                  className="bg-green-500 hover:bg-green-600 text-white font-semibold py-4 px-8 text-lg"
                 >
                   <ExternalLink className="w-5 h-5 mr-2" />
                   View on Hugging Face Hub
@@ -474,7 +474,7 @@ const Upload = () => {
                   <Button
                     onClick={handleUploadToHub}
                     disabled={isUploading}
-                    className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-8 text-lg"
+                    className="bg-green-500 hover:bg-green-600 text-white font-semibold py-4 px-8 text-lg"
                   >
                     {isUploading ? (
                       <>
@@ -493,7 +493,7 @@ const Upload = () => {
                     onClick={handleSkipUpload}
                     disabled={isUploading}
                     variant="outline"
-                    className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white py-4 px-8 text-lg"
+                    className="border-zinc-800 text-gray-300 hover:bg-black hover:text-white py-4 px-8 text-lg"
                   >
                     Skip Upload
                   </Button>
@@ -503,11 +503,11 @@ const Upload = () => {
 
             {/* Info Box */}
             {!isAlreadyOnHub && (
-              <div className="mt-8 p-4 bg-blue-900/20 border border-blue-600 rounded-lg">
+              <div className="mt-8 p-4 bg-green-900/20 border border-green-600 rounded-lg">
                 <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
+                  <AlertCircle className="w-5 h-5 text-green-400 mt-0.5" />
                   <div>
-                    <h3 className="font-semibold text-blue-400 mb-2">
+                    <h3 className="font-semibold text-green-400 mb-2">
                       About HuggingFace Hub Upload
                     </h3>
                     <ul className="text-sm text-gray-300 space-y-1">
@@ -537,7 +537,7 @@ const Upload = () => {
       </div>
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent className="bg-gray-900 border-gray-700 text-white">
+        <AlertDialogContent className="bg-black border-zinc-800 text-white">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete dataset from disk?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-400">
@@ -545,7 +545,7 @@ const Upload = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-gray-800 border-gray-700 text-white hover:bg-gray-700">
+            <AlertDialogCancel className="bg-black border-zinc-800 text-white hover:bg-zinc-900">
               Keep dataset
             </AlertDialogCancel>
             <AlertDialogAction

@@ -143,7 +143,7 @@ _FLAVOR_CACHE_TTL_SECONDS = 300.0
 
 app = FastAPI()
 
-# In dev mode the React app runs on :8080 while the API runs on :8000; in
+# In dev mode Vite on :8000 proxies the API from uvicorn :8001; in
 # prod they share an origin and CORS is unnecessary. allow_credentials with
 # a wildcard origin is rejected by browsers, so we drop it.
 app.add_middleware(
@@ -1264,7 +1264,213 @@ def delete_robot(name: str):
 @app.on_event("startup")
 def startup_event():
     """One-time startup diagnostics surfaced in the server terminal."""
+    # Load project .env if present (HF_TOKEN, VAST_API_KEY, …).
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if env_path.is_file():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
+
     warn_if_cuda_mismatch()
+    try:
+        from .seed import seed_seth_bot_if_missing
+
+        result = seed_seth_bot_if_missing()
+        if result.get("seeded"):
+            logger.info("Seeded robot config: %s", result)
+    except Exception as exc:
+        logger.warning("Robot seed skipped: %s", exc)
+
+
+# --- TrainMobile: models + dataset viewer + vast ---
+
+
+class SaveModelBody(BaseModel):
+    name: str
+    policy_ref: str
+    source: Literal["local", "hf", "vast", "import"] = "local"
+    job_id: str | None = None
+    dataset_repo_id: str | None = None
+    steps: int | None = None
+    episode_for_thumb: int = 0
+    activate: bool = True
+
+
+@app.get("/models")
+def models_list():
+    from . import models_registry as models
+
+    return {"models": [models.model_public_dict(m) for m in models.list_models()]}
+
+
+@app.get("/models/active")
+def models_active():
+    from . import models_registry as models
+
+    m = models.get_active_model()
+    return {"model": models.model_public_dict(m) if m else None}
+
+
+@app.post("/models")
+def models_save(body: SaveModelBody):
+    from . import dataset_viewer as dv
+    from . import models_registry as models
+
+    thumb = None
+    if body.dataset_repo_id:
+        try:
+            thumb = str(dv.extract_thumbnail(body.dataset_repo_id, body.episode_for_thumb))
+        except Exception as exc:
+            logger.warning("Thumbnail capture failed: %s", exc)
+    try:
+        record = models.save_model(
+            name=body.name,
+            policy_ref=body.policy_ref,
+            source=body.source,
+            job_id=body.job_id,
+            dataset_repo_id=body.dataset_repo_id,
+            steps=body.steps,
+            thumbnail_path=thumb,
+            activate=body.activate,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"model": models.model_public_dict(record)}
+
+
+@app.post("/models/{model_id}/activate")
+def models_activate(model_id: str):
+    from . import models_registry as models
+
+    try:
+        return {"model": models.model_public_dict(models.activate_model(model_id))}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Model not found") from exc
+
+
+@app.delete("/models/{model_id}")
+def models_delete(model_id: str):
+    from . import models_registry as models
+
+    try:
+        models.delete_model(model_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Model not found") from exc
+    return {"success": True}
+
+
+@app.get("/models/{model_id}/thumbnail")
+def models_thumbnail(model_id: str):
+    from fastapi.responses import FileResponse
+
+    from . import models_registry as models
+
+    m = models.get_model(model_id)
+    if m is None or not m.thumbnail_path or not Path(m.thumbnail_path).is_file():
+        raise HTTPException(status_code=404, detail="No thumbnail")
+    return FileResponse(m.thumbnail_path, media_type="image/jpeg")
+
+
+@app.get("/datasets/{repo_id:path}/meta")
+def dataset_meta(repo_id: str):
+    from . import dataset_viewer as dv
+
+    try:
+        return dv.get_dataset_meta(repo_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/datasets/{repo_id:path}/episodes/{episode}/timeseries")
+def dataset_timeseries(repo_id: str, episode: int):
+    from . import dataset_viewer as dv
+
+    try:
+        return dv.get_episode_timeseries(repo_id, episode)
+    except (FileNotFoundError, KeyError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/datasets/{repo_id:path}/episodes/{episode}/videos/{camera}")
+def dataset_video(repo_id: str, episode: int, camera: str):
+    from fastapi.responses import FileResponse
+
+    from . import dataset_viewer as dv
+
+    try:
+        info = dv.get_episode_video_info(repo_id, episode, camera)
+    except (FileNotFoundError, KeyError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(
+        info["path"],
+        media_type="video/mp4",
+        headers={
+            "X-From-Timestamp": str(info["from_timestamp"]),
+            "X-To-Timestamp": str(info["to_timestamp"]),
+            "X-FPS": str(info["fps"]),
+            "Accept-Ranges": "bytes",
+        },
+    )
+
+
+@app.get("/datasets/{repo_id:path}/episodes/{episode}/video-info/{camera}")
+def dataset_video_info(repo_id: str, episode: int, camera: str):
+    from . import dataset_viewer as dv
+
+    try:
+        info = dv.get_episode_video_info(repo_id, episode, camera)
+    except (FileNotFoundError, KeyError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    info = dict(info)
+    info.pop("path", None)
+    info["url"] = f"/datasets/{repo_id}/episodes/{episode}/videos/{camera}"
+    return info
+
+
+@app.delete("/datasets/{repo_id:path}/episodes/{episode}")
+def dataset_delete_episode(repo_id: str, episode: int):
+    from . import dataset_viewer as dv
+
+    try:
+        return dv.delete_episode(repo_id, episode)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/datasets/{repo_id:path}/episodes/{episode}/trim")
+def dataset_trim_episode(repo_id: str, episode: int, body: dict):
+    from . import dataset_viewer as dv
+
+    try:
+        trim = dv.TrimBody.model_validate(body)
+        return dv.trim_episode(repo_id, episode, trim)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/jobs/runners/vast/offers")
+def vast_offers(gpu: str | None = None, min_vram_gb: float = 16):
+    from .runners import vast as vast_runner
+
+    try:
+        return {"offers": vast_runner.search_offers(gpu_name=gpu, min_vram_gb=min_vram_gb)}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/jobs/runners/vast/spend")
+def vast_spend():
+    from .runners import vast as vast_runner
+
+    try:
+        return vast_runner.get_account_spend()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.on_event("shutdown")

@@ -40,9 +40,9 @@ const statePresentation: Record<
   { label: string; color: string; Icon: React.ComponentType<{ className?: string }> }
 > = {
   running: { label: "Running", color: "text-green-400", Icon: Loader2 },
-  done: { label: "Done", color: "text-slate-400", Icon: CheckCircle2 },
+  done: { label: "Done", color: "text-zinc-400", Icon: CheckCircle2 },
   failed: { label: "Failed", color: "text-red-400", Icon: XCircle },
-  interrupted: { label: "Interrupted", color: "text-amber-400", Icon: AlertTriangle },
+  interrupted: { label: "Interrupted", color: "text-green-400", Icon: AlertTriangle },
 };
 
 const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
@@ -130,8 +130,8 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
       onClick={() => {
         if (!isImported) navigate(`/training/${job.id}`);
       }}
-      className={`bg-slate-800/50 border-slate-700 rounded-xl transition-colors ${
-        isImported ? "" : "cursor-pointer hover:border-slate-500"
+      className={`bg-black border-zinc-800 rounded-xl transition-colors ${
+        isImported ? "" : "cursor-pointer hover:border-zinc-700"
       }`}
     >
       <CardContent className="p-4 space-y-3">
@@ -145,7 +145,7 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
               variant="ghost"
               size="icon"
               asChild
-              className="h-7 w-7 text-slate-400 hover:text-white"
+              className="h-7 w-7 text-zinc-400 hover:text-white"
               aria-label="Open Hub job page"
             >
               <a
@@ -162,7 +162,7 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
               variant="ghost"
               size="icon"
               onClick={handleAction}
-              className="h-7 w-7 text-slate-400 hover:text-white"
+              className="h-7 w-7 text-zinc-400 hover:text-white"
               aria-label={isRunning ? "Stop job" : "Delete job"}
             >
               {isRunning ? <Square className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
@@ -178,7 +178,7 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
               visible. The leading LRM keeps the path's first "/" from being
               bidi-reordered to the wrong end. */}
           <div
-            className="text-xs text-slate-400 truncate"
+            className="text-xs text-zinc-400 truncate"
             title={subtitle}
             style={isImported ? { direction: "rtl", textAlign: "left" } : undefined}
           >
@@ -186,9 +186,9 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
           </div>
         </div>
         {showProgressBar ? (
-          <div className="relative h-5 w-full overflow-hidden rounded-md bg-slate-900 border border-slate-700">
+          <div className="relative h-5 w-full overflow-hidden rounded-md bg-black border border-zinc-800">
             <div
-              className="h-full bg-gradient-to-r from-blue-500 to-sky-400 transition-[width] duration-500"
+              className="h-full bg-gradient-to-r from-green-600 to-green-400 transition-[width] duration-500"
               style={{ width: `${progressPct}%` }}
             />
             <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white tabular-nums drop-shadow">

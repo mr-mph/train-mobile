@@ -4,11 +4,11 @@ import { ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import LandingTopBar from "@/components/landing/LandingTopBar";
-import Footer from "@/components/Footer";
 import RobotConfigManager from "@/components/landing/RobotConfigManager";
 import RecordingModal from "@/components/landing/RecordingModal";
 import DatasetPicker from "@/components/landing/DatasetPicker";
 import JobsSection from "@/components/jobs/JobsSection";
+import ModelsSection from "@/components/landing/ModelsSection";
 
 import UsageInstructionsModal from "@/components/landing/UsageInstructionsModal";
 import { useHfAuth } from "@/contexts/HfAuthContext";
@@ -98,14 +98,7 @@ const Landing = () => {
 
   const handlePickExisting = (item: DatasetItem) => {
     if (item.source === "local" || item.source === "both") {
-      navigate("/upload", {
-        state: {
-          datasetInfo: {
-            dataset_repo_id: item.repo_id,
-            source: item.source,
-          },
-        },
-      });
+      navigate(`/edit-dataset?repo=${encodeURIComponent(item.repo_id)}`);
       return;
     }
     openHubViewer(item.repo_id, item.private);
@@ -222,13 +215,13 @@ const Landing = () => {
   return (
     <div
       className="min-h-screen bg-black text-white pb-16"
-      style={{ ["--lelab-topbar-h" as string]: "48px" }}
+      style={{ ["--tm-topbar-h" as string]: "48px" }}
     >
       <LandingTopBar />
 
       <div
-        className="sticky z-20 bg-black/95 backdrop-blur supports-[backdrop-filter]:bg-black/70 border-b border-gray-800"
-        style={{ top: "var(--lelab-topbar-h)" }}
+        className="sticky z-20 bg-black/95 backdrop-blur supports-[backdrop-filter]:bg-black/70 border-b border-zinc-800"
+        style={{ top: "var(--tm-topbar-h)" }}
       >
         <div className="mx-auto max-w-7xl px-4 py-4 grid gap-4 grid-cols-1 lg:grid-cols-[1.2fr_2fr]">
           <RobotConfigManager
@@ -241,7 +234,7 @@ const Landing = () => {
             deleteRobot={deleteRobot}
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-3 flex flex-col gap-2">
+            <div className="bg-black rounded-lg border border-zinc-800 p-3 flex flex-col gap-2">
               <h3 className="font-semibold text-lg text-left h-10 flex items-center">
                 Dataset
               </h3>
@@ -255,7 +248,7 @@ const Landing = () => {
                 <Button
                   variant="outline"
                   role="combobox"
-                  className="w-full justify-between bg-gray-800 border-gray-600 text-white hover:bg-gray-700"
+                  className="w-full justify-between bg-black border-zinc-800 text-white hover:bg-zinc-900"
                 >
                   <span className="truncate text-gray-300">
                     {datasetsLoading
@@ -266,7 +259,7 @@ const Landing = () => {
                 </Button>
               </DatasetPicker>
             </div>
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-3 flex flex-col gap-2">
+            <div className="bg-black rounded-lg border border-zinc-800 p-3 flex flex-col gap-2">
               <h3 className="font-semibold text-lg text-left h-10 flex items-center">
                 Create a model
               </h3>
@@ -281,11 +274,10 @@ const Landing = () => {
         </div>
       </div>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="mx-auto max-w-7xl px-4 py-6 space-y-8">
+        <ModelsSection />
         <JobsSection />
       </main>
-
-      <Footer />
 
       <UsageInstructionsModal
         open={showUsageModal}

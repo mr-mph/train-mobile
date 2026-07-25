@@ -159,7 +159,7 @@ const Inference: React.FC = () => {
           variant="ghost"
           size="icon"
           onClick={() => navigate("/")}
-          className="text-slate-400 hover:bg-slate-800 hover:text-white rounded-lg"
+          className="text-zinc-400 hover:bg-black hover:text-white rounded-lg"
         >
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -168,18 +168,18 @@ const Inference: React.FC = () => {
       </div>
 
       <div className="flex-1 flex items-center justify-center">
-        <div className="bg-gray-900 rounded-lg border border-gray-700 p-8 w-full max-w-xl">
+        <div className="bg-black rounded-lg border border-zinc-800 p-8 w-full max-w-xl">
           <div className="text-center mb-6">
             <div
               className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold tracking-widest ${
                 isSettingUp
-                  ? "bg-amber-500/15 text-amber-300"
+                  ? "bg-green-500 text-green-400"
                   : "bg-green-500/15 text-green-300"
               }`}
             >
               <span
                 className={`w-2 h-2 rounded-full ${
-                  isSettingUp ? "bg-amber-500" : "bg-green-500"
+                  isSettingUp ? "bg-green-500" : "bg-green-500"
                 } animate-pulse`}
               />
               {pillLabel}
@@ -189,7 +189,7 @@ const Inference: React.FC = () => {
           <div className="text-center mb-4">
             <div
               className={`text-7xl font-mono font-bold leading-none ${
-                isSettingUp ? "text-amber-400" : "text-green-400"
+                isSettingUp ? "text-green-400" : "text-green-400"
               }`}
             >
               {formatTime(timerSeconds)}
@@ -201,18 +201,18 @@ const Inference: React.FC = () => {
             </div>
           </div>
 
-          <div className="w-full bg-gray-800 rounded-full h-1.5 mb-8">
+          <div className="w-full bg-black rounded-full h-1.5 mb-8">
             <div
               className={`h-1.5 rounded-full transition-all duration-500 ${
                 isSettingUp
-                  ? "bg-amber-500/40 animate-pulse w-full"
+                  ? "bg-green-500 animate-pulse w-full"
                   : "bg-green-500"
               }`}
               style={isSettingUp ? undefined : { width: `${pct}%` }}
             />
           </div>
 
-          <div className="text-xs text-slate-500 break-all mb-6">
+          <div className="text-xs text-zinc-500 break-all mb-6">
             policy: {status.policy_ref ?? "(unknown)"}
           </div>
 
@@ -228,7 +228,7 @@ const Inference: React.FC = () => {
       </div>
 
       <AlertDialog open={showStopConfirm} onOpenChange={setShowStopConfirm}>
-        <AlertDialogContent className="bg-gray-900 border-gray-700 text-white">
+        <AlertDialogContent className="bg-black border-zinc-800 text-white">
           <AlertDialogHeader>
             <AlertDialogTitle>Stop inference?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-400">
@@ -237,7 +237,7 @@ const Inference: React.FC = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-gray-800 border-gray-700 text-white hover:bg-gray-700">
+            <AlertDialogCancel className="bg-black border-zinc-800 text-white hover:bg-zinc-900">
               Keep running
             </AlertDialogCancel>
             <AlertDialogAction

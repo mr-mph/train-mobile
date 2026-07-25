@@ -487,13 +487,13 @@ const Calibration = () => {
         };
       case "connecting":
         return {
-          color: "bg-yellow-500",
+          color: "bg-green-500",
           icon: <Loader2 className="w-4 h-4 animate-spin" />,
           text: "Connecting",
         };
       case "recording":
         return {
-          color: "bg-purple-500",
+          color: "bg-green-500",
           icon: <Activity className="w-4 h-4" />,
           text: "Recording Ranges",
         };
@@ -511,7 +511,7 @@ const Calibration = () => {
         };
       case "stopping":
         return {
-          color: "bg-orange-500",
+          color: "bg-green-500",
           icon: <Square className="w-4 h-4" />,
           text: "Stopping",
         };
@@ -527,14 +527,14 @@ const Calibration = () => {
   const statusDisplay = getStatusDisplay();
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-4">
+    <div className="min-h-screen bg-black text-white p-4">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => navigate(-1)}
-            className="text-slate-400 hover:text-white hover:bg-slate-800"
+            className="text-zinc-400 hover:text-white hover:bg-black"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
@@ -547,7 +547,7 @@ const Calibration = () => {
         </div>
 
         {!robotName && (
-          <Alert className="mb-6 bg-amber-900/40 border-amber-700 text-amber-100">
+          <Alert className="mb-6 bg-green-500 border-green-700 text-green-400">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
               Open Calibration from a robot's gear icon on the Landing page.
@@ -558,10 +558,10 @@ const Calibration = () => {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="bg-slate-800/60 border-slate-700 backdrop-blur-sm">
+          <Card className="bg-black border-zinc-800 backdrop-blur-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-200">
-                <Settings className="w-5 h-5 text-blue-400" />
+              <CardTitle className="flex items-center gap-2 text-zinc-200">
+                <Settings className="w-5 h-5 text-green-400" />
                 Configuration
               </CardTitle>
             </CardHeader>
@@ -569,7 +569,7 @@ const Calibration = () => {
               <div className="space-y-2">
                 <Label
                   htmlFor="deviceType"
-                  className="text-sm font-medium text-slate-300"
+                  className="text-sm font-medium text-zinc-300"
                 >
                   Device Type *
                 </Label>
@@ -577,14 +577,14 @@ const Calibration = () => {
                   value={deviceType}
                   onValueChange={handleDeviceTypeChange}
                 >
-                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white rounded-md">
+                  <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white rounded-md">
                     <SelectValue placeholder="Select device type" />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-700 text-white">
-                    <SelectItem value="teleop" className="hover:bg-slate-700">
+                  <SelectContent className="bg-black border-zinc-800 text-white">
+                    <SelectItem value="teleop" className="hover:bg-zinc-900">
                       Teleoperator (Leader)
                     </SelectItem>
-                    <SelectItem value="robot" className="hover:bg-slate-700">
+                    <SelectItem value="robot" className="hover:bg-zinc-900">
                       Robot (Follower)
                     </SelectItem>
                   </SelectContent>
@@ -594,7 +594,7 @@ const Calibration = () => {
               <div className="space-y-2">
                 <Label
                   htmlFor="port"
-                  className="text-sm font-medium text-slate-300"
+                  className="text-sm font-medium text-zinc-300"
                 >
                   Port *
                 </Label>
@@ -605,23 +605,23 @@ const Calibration = () => {
                     onChange={(e) => setPort(e.target.value)}
                     onBlur={(e) => persistPort(e.target.value)}
                     placeholder="/dev/tty.usbmodem..."
-                    className="bg-slate-700 border-slate-600 text-white rounded-md flex-1"
+                    className="bg-zinc-900 border-zinc-800 text-white rounded-md flex-1"
                   />
                   <PortDetectionButton
                     onClick={handlePortDetection}
                     robotType={deviceType === "robot" ? "follower" : "leader"}
-                    className="border-slate-600 hover:border-blue-500 text-slate-400 hover:text-blue-400 bg-slate-700 hover:bg-slate-600"
+                    className="border-zinc-800 hover:border-green-500 text-zinc-400 hover:text-green-400 bg-zinc-900 hover:bg-slate-600"
                   />
                 </div>
               </div>
 
-              <Separator className="bg-slate-700" />
+              <Separator className="bg-zinc-900" />
 
               <div className="flex flex-col gap-3">
                 {!calibrationStatus.calibration_active ? (
                   <Button
                     onClick={handleStartCalibration}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-full py-6 text-lg"
+                    className="w-full bg-green-600 hover:bg-green-700 text-white rounded-full py-6 text-lg"
                     disabled={!robotName || !deviceType || !port}
                   >
                     <Play className="w-5 h-5 mr-2" />
@@ -641,18 +641,18 @@ const Calibration = () => {
 
               {robot && (
                 <div className="space-y-2 pt-2">
-                  <div className="text-sm font-medium text-slate-300">
+                  <div className="text-sm font-medium text-zinc-300">
                     Robot calibration
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     {robot.leader_config ? (
                       <CheckCircle className="w-4 h-4 text-green-400" />
                     ) : (
-                      <Circle className="w-4 h-4 text-slate-500" />
+                      <Circle className="w-4 h-4 text-zinc-500" />
                     )}
                     <span
                       className={
-                        robot.leader_config ? "text-slate-200" : "text-slate-400"
+                        robot.leader_config ? "text-zinc-200" : "text-zinc-400"
                       }
                     >
                       Leader (Teleoperator)
@@ -662,13 +662,13 @@ const Calibration = () => {
                     {robot.follower_config ? (
                       <CheckCircle className="w-4 h-4 text-green-400" />
                     ) : (
-                      <Circle className="w-4 h-4 text-slate-500" />
+                      <Circle className="w-4 h-4 text-zinc-500" />
                     )}
                     <span
                       className={
                         robot.follower_config
-                          ? "text-slate-200"
-                          : "text-slate-400"
+                          ? "text-zinc-200"
+                          : "text-zinc-400"
                       }
                     >
                       Follower (Robot)
@@ -679,16 +679,16 @@ const Calibration = () => {
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-800/60 border-slate-700 backdrop-blur-sm">
+          <Card className="bg-black border-zinc-800 backdrop-blur-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-200">
-                <Activity className="w-5 h-5 text-teal-400" />
+              <CardTitle className="flex items-center gap-2 text-zinc-200">
+                <Activity className="w-5 h-5 text-green-400" />
                 Status
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-md">
-                <span className="text-slate-300">Status:</span>
+              <div className="flex items-center justify-between p-3 bg-black rounded-md">
+                <span className="text-zinc-300">Status:</span>
                 <Badge
                   className={`${statusDisplay.color} text-white rounded-md`}
                 >
@@ -701,12 +701,12 @@ const Calibration = () => {
                 calibrationStatus.recorded_ranges && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <Activity className="w-4 h-4 text-purple-400" />
-                      <span className="text-sm font-medium text-slate-300">
+                      <Activity className="w-4 h-4 text-green-400" />
+                      <span className="text-sm font-medium text-zinc-300">
                         Live Position Data
                       </span>
                     </div>
-                    <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+                    <div className="bg-black rounded-lg p-4 border border-zinc-800">
                       <div className="space-y-3">
                         {Object.entries(calibrationStatus.recorded_ranges).map(
                           ([motor, range]) => {
@@ -736,12 +736,12 @@ const Calibration = () => {
                                       />
                                     )}
                                   </div>
-                                  <span className="text-slate-300 text-xs font-mono">
+                                  <span className="text-zinc-300 text-xs font-mono">
                                     {range.current}
                                   </span>
                                 </div>
                                 <div className="relative">
-                                  <div className="w-full bg-slate-700 rounded-full h-3">
+                                  <div className="w-full bg-zinc-900 rounded-full h-3">
                                     <div
                                       className="bg-slate-600 h-3 rounded-full relative"
                                       style={{ width: "100%" }}
@@ -750,7 +750,7 @@ const Calibration = () => {
                                         className={`absolute top-0 w-1 h-3 rounded-full transition-all duration-100 ${
                                           rangeComplete
                                             ? "bg-green-400"
-                                            : "bg-yellow-400"
+                                            : "bg-green-400"
                                         }`}
                                         style={{
                                           left: `${Math.max(
@@ -762,7 +762,7 @@ const Calibration = () => {
                                       />
                                     </div>
                                   </div>
-                                  <div className="flex justify-between text-xs text-slate-400 mt-1">
+                                  <div className="flex justify-between text-xs text-zinc-400 mt-1">
                                     <span>{range.min}</span>
                                     <span>{range.max}</span>
                                   </div>
@@ -777,7 +777,7 @@ const Calibration = () => {
                 )}
 
               {calibrationStatus.status === "connecting" && (
-                <Alert className="bg-yellow-900/50 border-yellow-700 text-yellow-200">
+                <Alert className="bg-green-900/40 border-green-700 text-green-400">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
                     Connecting to the device. Please ensure it's connected.
@@ -806,7 +806,7 @@ const Calibration = () => {
                         className={`px-8 py-3 rounded-full transition-colors ${
                           allComplete
                             ? "bg-green-600 hover:bg-green-700"
-                            : "bg-orange-500 hover:bg-orange-600"
+                            : "bg-green-500 hover:bg-green-500"
                         }`}
                       >
                         {allComplete ? (
@@ -817,7 +817,7 @@ const Calibration = () => {
                         Save Calibration
                       </Button>
                     </div>
-                    <Alert className="bg-purple-900/50 border-purple-700 text-purple-200">
+                    <Alert className="bg-green-900/40 border-green-700 text-green-200">
                       <Activity className="h-4 w-4" />
                       <AlertDescription>
                         <strong>Important:</strong> Move EACH joint through its
@@ -868,12 +868,12 @@ const Calibration = () => {
 
               <div
                 ref={demoVideoRef}
-                className="bg-slate-900/50 p-4 rounded-lg border border-slate-700"
+                className="bg-black p-4 rounded-lg border border-zinc-800"
               >
-                <h4 className="font-semibold mb-3 text-slate-200">
+                <h4 className="font-semibold mb-3 text-zinc-200">
                   Calibration Demo:
                 </h4>
-                <div className="relative rounded-lg overflow-hidden bg-slate-800">
+                <div className="relative rounded-lg overflow-hidden bg-black">
                   <video
                     className="w-full h-auto rounded-md"
                     controls
@@ -884,12 +884,12 @@ const Calibration = () => {
                       src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/lerobot/calibrate_so101_2.mp4"
                       type="video/mp4"
                     />
-                    <p className="text-slate-400 text-sm text-center py-4">
+                    <p className="text-zinc-400 text-sm text-center py-4">
                       Your browser does not support the video tag.
                       <br />
                       <a
                         href="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/lerobot/calibrate_so101_2.mp4"
-                        className="text-blue-400 hover:text-blue-300 underline"
+                        className="text-green-400 hover:text-green-400 underline"
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -904,16 +904,16 @@ const Calibration = () => {
         </div>
 
         {robotName && (
-          <Card className="bg-slate-800/60 border-slate-700 backdrop-blur-sm mt-6">
+          <Card className="bg-black border-zinc-800 backdrop-blur-sm mt-6">
             <CardHeader className="flex-row items-center justify-between space-y-0">
-              <CardTitle className="flex items-center gap-2 text-slate-200">
-                <Settings className="w-5 h-5 text-blue-400" />
+              <CardTitle className="flex items-center gap-2 text-zinc-200">
+                <Settings className="w-5 h-5 text-green-400" />
                 Attached cameras
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Label
                   htmlFor="cameras-toggle"
-                  className="text-sm text-slate-400 cursor-pointer"
+                  className="text-sm text-zinc-400 cursor-pointer"
                 >
                   {camerasActive ? "On" : "Off"}
                 </Label>
@@ -933,11 +933,11 @@ const Calibration = () => {
                   onCamerasChange={handleCamerasChange}
                 />
               ) : (
-                <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-6 text-center space-y-3">
-                  <Camera className="w-10 h-10 mx-auto text-slate-500" />
+                <div className="rounded-lg border border-zinc-800 bg-black p-6 text-center space-y-3">
+                  <Camera className="w-10 h-10 mx-auto text-zinc-500" />
                   <div className="space-y-1">
-                    <p className="text-slate-200 font-medium">Cameras are off</p>
-                    <p className="text-sm text-slate-400 max-w-md mx-auto">
+                    <p className="text-zinc-200 font-medium">Cameras are off</p>
+                    <p className="text-sm text-zinc-400 max-w-md mx-auto">
                       Turn cameras on to scan for connected devices and preview
                       them. The browser may briefly open a camera to read device
                       labels, and configured cameras stay active while previews
@@ -945,13 +945,13 @@ const Calibration = () => {
                       Nothing is recorded.
                     </p>
                     {cameras.length > 0 && (
-                      <p className="text-xs text-slate-500 pt-1">
+                      <p className="text-xs text-zinc-500 pt-1">
                         {cameras.length} camera
                         {cameras.length === 1 ? "" : "s"} saved to this robot.
                       </p>
                     )}
                   </div>
-                  <p className="flex items-center justify-center gap-1.5 text-xs text-slate-500">
+                  <p className="flex items-center justify-center gap-1.5 text-xs text-zinc-500">
                     <ShieldQuestion className="w-3.5 h-3.5" />
                     You'll be asked to grant camera access.
                   </p>

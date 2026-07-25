@@ -13,7 +13,7 @@ const TrainingHeader: React.FC = () => {
           variant="ghost"
           size="icon"
           onClick={() => navigate('/')}
-          className="text-slate-400 hover:bg-slate-800 hover:text-white rounded-lg"
+          className="text-zinc-400 hover:bg-black hover:text-white rounded-lg"
         >
           <ArrowLeft className="w-5 h-5" />
         </Button>
