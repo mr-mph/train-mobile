@@ -25,8 +25,10 @@ import logging
 import os
 import shlex
 import time
+import contextlib
 from pathlib import Path
 from typing import Any
+from collections.abc import Callable
 
 import httpx
 
@@ -129,6 +131,35 @@ def destroy_instance(instance_id: int | str) -> None:
             r.raise_for_status()
 
 
+def get_instance(instance_id: int | str) -> dict[str, Any]:
+    """Fetch one instance. Prefer ``GET /instances/{id}/`` (Bearer-scoped).
+
+    Do not use ``GET /instances/?owner=me`` — that query shape returns 410 Gone.
+    """
+    with httpx.Client(timeout=20.0) as client:
+        r = client.get(f"{VAST_API}/instances/{instance_id}/", headers=_headers())
+        r.raise_for_status()
+        payload = r.json()
+
+    # show-instance returns ``{"instances": {...}}`` (object, not a list).
+    inst = payload.get("instances") if isinstance(payload, dict) else None
+    if isinstance(inst, dict):
+        return inst
+    if isinstance(inst, list):
+        for item in inst:
+            if isinstance(item, dict) and str(item.get("id")) == str(instance_id):
+                return item
+        if inst and isinstance(inst[0], dict):
+            return inst[0]
+    if isinstance(payload, dict) and payload.get("id") is not None:
+        return payload
+    raise RuntimeError(f"Unexpected Vast instance payload for {instance_id}: {payload!r}")
+
+
+# Terminal statuses that will never become SSH-ready (Vast docs "poll trap").
+_DEAD_STATUSES = frozenset({"exited", "unknown", "offline", "error", "failed"})
+
+
 class VastJobRunner(SubprocessJobRunner):
     """Rent a Vast instance; SSH runs lerobot-train and we tail stdout locally."""
 
@@ -142,6 +173,11 @@ class VastJobRunner(SubprocessJobRunner):
         self._offer_id = offer_id
         self._instance_id: int | str | None = None
         self._dph: float | None = None
+        # True from create until SSH train process is spawned (or start fails).
+        # Keeps the registry watchdog from finalising the job mid-provision.
+        self._provisioning = False
+        self._on_status: Callable[[str], None] | None = None
+        self._abort_code: int | None = None
 
     @property
     def instance_id(self) -> int | str | None:
@@ -151,7 +187,37 @@ class VastJobRunner(SubprocessJobRunner):
     def dph_total(self) -> float | None:
         return self._dph
 
+    def set_status_callback(self, cb: Callable[[str], None] | None) -> None:
+        self._on_status = cb
+
+    def _emit_status(self, message: str) -> None:
+        cb = self._on_status
+        if cb is not None:
+            with contextlib.suppress(Exception):
+                cb(message)
+
+    def is_running(self) -> bool:
+        if self._provisioning:
+            return True
+        return super().is_running()
+
+    def returncode(self) -> int | None:
+        if self._process is None and self._abort_code is not None:
+            return self._abort_code
+        return super().returncode()
+
     def start(self, job_id: str, config: TrainingRequest, output_dir: str) -> None:
+        self._stop_event.clear()
+        self._provisioning = True
+        try:
+            self._start_inner(job_id, config, output_dir)
+        finally:
+            self._provisioning = False
+
+    def _start_inner(self, job_id: str, config: TrainingRequest, output_dir: str) -> None:
+        if self._stop_event.is_set():
+            raise RuntimeError("Vast start cancelled")
+
         hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN") or ""
         body = {
             "client_id": "me",
@@ -163,14 +229,24 @@ class VastJobRunner(SubprocessJobRunner):
             "runtype": "ssh",
             "disk": 32,
         }
-        with httpx.Client(timeout=60.0) as client:
-            r = client.put(
-                f"{VAST_API}/asks/{self._offer_id}/",
-                headers=_headers(),
-                json=body,
-            )
-            r.raise_for_status()
-            created = r.json()
+        self._emit_status("Creating Vast instance…")
+        try:
+            with httpx.Client(timeout=60.0) as client:
+                r = client.put(
+                    f"{VAST_API}/asks/{self._offer_id}/",
+                    headers=_headers(),
+                    json=body,
+                )
+                r.raise_for_status()
+                created = r.json()
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text[:500]
+            raise RuntimeError(
+                f"Vast create instance failed ({exc.response.status_code}): {detail}"
+            ) from exc
+
+        if self._stop_event.is_set():
+            raise RuntimeError("Vast start cancelled")
 
         new_ids = created.get("new_contract") or created.get("instances")
         if isinstance(new_ids, list) and new_ids:
@@ -182,8 +258,26 @@ class VastJobRunner(SubprocessJobRunner):
         if self._instance_id is None:
             raise RuntimeError(f"Vast create did not return instance id: {created}")
 
-        ssh = self._wait_for_ssh(timeout_s=360)
+        self._emit_status(f"Waiting for Vast SSH (instance {self._instance_id})…")
+        try:
+            ssh = self._wait_for_ssh(timeout_s=360)
+        except Exception:
+            # Avoid leaving a billed orphan if boot/SSH never came up.
+            try:
+                destroy_instance(self._instance_id)
+            except Exception as destroy_exc:
+                logger.warning(
+                    "Failed to destroy Vast instance %s after boot failure: %s",
+                    self._instance_id,
+                    destroy_exc,
+                )
+            raise
         self._dph = float(ssh.get("dph_total") or 0)
+
+        if self._stop_event.is_set():
+            with contextlib.suppress(Exception):
+                destroy_instance(self._instance_id)
+            raise RuntimeError("Vast start cancelled")
 
         # Build train argv without HF job.target; force cuda.
         from ..jobs import JobTarget
@@ -218,32 +312,59 @@ class VastJobRunner(SubprocessJobRunner):
             f"root@{ssh['host']}",
             remote_script,
         ]
+        self._emit_status("Starting remote training…")
         self._spawn(ssh_cmd, thread_name=f"vast-train-{job_id}")
 
     def _wait_for_ssh(self, timeout_s: float = 360) -> dict[str, Any]:
         deadline = time.time() + timeout_s
+        last_status = ""
         while time.time() < deadline:
-            with httpx.Client(timeout=20.0) as client:
-                r = client.get(f"{VAST_API}/instances/", headers=_headers(), params={"owner": "me"})
-                r.raise_for_status()
-                payload = r.json()
-            instances = payload if isinstance(payload, list) else payload.get("instances") or []
-            for inst in instances:
-                if str(inst.get("id")) != str(self._instance_id):
-                    continue
-                host = inst.get("public_ipaddr") or inst.get("ssh_host")
-                port = inst.get("ssh_port")
-                status = str(inst.get("actual_status") or "").lower()
-                if host and port and status in ("running", "success", ""):
-                    return {
-                        "host": host,
-                        "port": port,
-                        "dph_total": inst.get("dph_total") or inst.get("dph_base"),
-                    }
-            time.sleep(5)
-        raise TimeoutError(f"Vast instance {self._instance_id} did not become SSH-ready")
+            if self._stop_event.is_set():
+                raise RuntimeError("Vast start cancelled")
+            try:
+                inst = get_instance(self._instance_id)  # type: ignore[arg-type]
+            except httpx.HTTPStatusError as exc:
+                raise RuntimeError(
+                    f"Vast instance poll failed ({exc.response.status_code}): "
+                    f"{exc.response.text[:300]}"
+                ) from exc
+
+            status_raw = inst.get("actual_status")
+            status = str(status_raw).lower() if status_raw is not None else ""
+            last_status = status or "null"
+            if status in _DEAD_STATUSES:
+                msg = inst.get("status_msg") or status
+                raise RuntimeError(
+                    f"Vast instance {self._instance_id} entered terminal status "
+                    f"{status!r}: {msg}"
+                )
+
+            host = inst.get("public_ipaddr") or inst.get("ssh_host")
+            port = inst.get("ssh_port")
+            # ``running`` is the ready state; empty/null often means still provisioning.
+            if host and port and status in ("running", "success"):
+                return {
+                    "host": host,
+                    "port": port,
+                    "dph_total": inst.get("dph_total") or inst.get("dph_base"),
+                }
+            label = last_status if last_status != "null" else "booting"
+            self._emit_status(
+                f"Waiting for Vast SSH (instance {self._instance_id}, {label})…"
+            )
+            # Interruptible sleep so Stop responds quickly during provision.
+            if self._stop_event.wait(5.0):
+                raise RuntimeError("Vast start cancelled")
+        raise TimeoutError(
+            f"Vast instance {self._instance_id} did not become SSH-ready "
+            f"(last status={last_status!r})"
+        )
 
     def stop(self) -> None:
+        self._stop_event.set()
+        self._provisioning = False
+        if self._process is None:
+            self._abort_code = 130  # interrupted before SSH train started
         super().stop()
         if self._instance_id is not None:
             try:

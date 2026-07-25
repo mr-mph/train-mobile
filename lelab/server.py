@@ -727,6 +727,11 @@ async def create_training_job(req: Request):
     except ValueError as exc:
         # e.g. "flavor is required when runner is hf_cloud"
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # e.g. Vast create/SSH boot failures
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     return record
 
 

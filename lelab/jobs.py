@@ -92,6 +92,8 @@ class JobRecord(BaseModel):
     hf_job_url: str | None = None
     # Captured from training stdout the first time wandb prints the run URL.
     wandb_run_url: str | None = None
+    # Transient UX status (e.g. Vast provisioning). Cleared once training runs.
+    status_message: str | None = None
     # Number of checkpoints currently visible (local: filesystem; cloud:
     # Hub repo). Filled in by JobRegistry.list/get; persisted as zero.
     checkpoint_count: int = 0
@@ -828,6 +830,9 @@ class JobRegistry:
                 started_at=time.time(),
                 runner=target.runner if target.runner != "vast" else "vast",
                 hf_flavor=target.flavor or target.offer_id,
+                status_message=(
+                    "Provisioning Vast instance…" if target.runner == "vast" else None
+                ),
             )
 
             job_dir.mkdir(parents=True, exist_ok=True)
@@ -844,25 +849,84 @@ class JobRegistry:
             else:
                 runner = HfCloudJobRunner(record.metrics, log_path, target.flavor)
 
-            try:
-                runner.start(job_id, config, lerobot_output_dir)
-            except Exception as exc:
-                logger.exception("Failed to start runner for job %s", job_id)
-                record.state = "failed"
-                record.ended_at = time.time()
-                record.error_message = f"Failed to start runner: {exc}"
-                self._persist(record, force=True)
-                raise
-
-            # Capture runner-specific identifiers. For cloud jobs the HF job id
-            # / page URL / model repo are printed by lerobot's submit_to_hf and
-            # only appear in stdout a few seconds after start, so they're None
-            # here; the watchdog (_tick) parses and persists them once they land.
-            if target.runner == "local":
-                record.process_pid = runner.pid()
-
-            self._persist(record, force=True)
             self._runners[job_id] = runner
+
+            if target.runner == "vast":
+                # Return immediately; provision + SSH boot in a background thread
+                # so the Training UI can close and show live status on Jobs.
+                def _set_status(message: str, *, jid: str = job_id) -> None:
+                    with self._lock:
+                        rec = self._records.get(jid)
+                        if rec is None or rec.state != "running":
+                            return
+                        rec.status_message = message
+                    self._persist(rec, force=True)
+                    self._notify_change()
+
+                runner.set_status_callback(_set_status)
+
+                def _vast_boot(
+                    *,
+                    jid: str = job_id,
+                    rnr: VastJobRunner = runner,
+                    cfg: TrainingRequest = config,
+                    out: str = lerobot_output_dir,
+                ) -> None:
+                    try:
+                        rnr.start(jid, cfg, out)
+                        with self._lock:
+                            rec = self._records.get(jid)
+                            if rec is not None and rec.state == "running":
+                                rec.status_message = None
+                                self._persist(rec, force=True)
+                        self._notify_change()
+                    except Exception as exc:
+                        logger.exception("Vast provision failed for job %s", jid)
+                        with self._lock:
+                            rec = self._records.get(jid)
+                            if rec is None:
+                                return
+                            if rec.state != "running":
+                                return
+                            cancelled = "cancelled" in str(exc).lower()
+                            rec.state = "interrupted" if cancelled else "failed"
+                            rec.ended_at = time.time()
+                            rec.status_message = None
+                            rec.error_message = (
+                                "Vast start cancelled"
+                                if cancelled
+                                else f"Failed to start Vast runner: {exc}"
+                            )
+                            self._runners.pop(jid, None)
+                            self._persist(rec, force=True)
+                        self._notify_change()
+
+                threading.Thread(
+                    target=_vast_boot,
+                    name=f"vast-boot-{job_id}",
+                    daemon=True,
+                ).start()
+            else:
+                try:
+                    runner.start(job_id, config, lerobot_output_dir)
+                except Exception as exc:
+                    logger.exception("Failed to start runner for job %s", job_id)
+                    record.state = "failed"
+                    record.ended_at = time.time()
+                    record.error_message = f"Failed to start runner: {exc}"
+                    self._runners.pop(job_id, None)
+                    self._persist(record, force=True)
+                    raise
+
+                # Capture runner-specific identifiers. For cloud jobs the HF job id
+                # / page URL / model repo are printed by lerobot's submit_to_hf and
+                # only appear in stdout a few seconds after start, so they're None
+                # here; the watchdog (_tick) parses and persists them once they land.
+                if target.runner == "local":
+                    record.process_pid = runner.pid()
+
+                self._persist(record, force=True)
+
         self._notify_change()
         return record
 
@@ -1224,6 +1288,7 @@ class JobRegistry:
                         "metrics": record.metrics.model_dump(),
                         "wandb_run_url": record.wandb_run_url,
                         "checkpoint_count": self._count_checkpoints(record),
+                        "status_message": record.status_message,
                     }
                 )
                 continue
@@ -1237,10 +1302,16 @@ class JobRegistry:
             with self._lock:
                 if record.wandb_run_url is None:
                     record.wandb_run_url = runner.wandb_run_url()
-                record.state = "done" if rc == 0 else "failed"
+                record.status_message = None
+                if rc == 0:
+                    record.state = "done"
+                elif rc == 130:
+                    record.state = "interrupted"
+                else:
+                    record.state = "failed"
                 record.ended_at = time.time()
                 record.exit_code = rc
-                if rc != 0 and record.error_message is None:
+                if record.state == "failed" and record.error_message is None:
                     record.error_message = f"Job exited with code {rc}"
                 self._runners.pop(jid, None)
             self._persist(record, force=True)

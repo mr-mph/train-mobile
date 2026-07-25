@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -57,32 +59,48 @@ const TargetCard: React.FC<TargetCardProps> = ({
   const [offers, setOffers] = useState<VastOffer[]>([]);
   const [vastLoading, setVastLoading] = useState(false);
   const [spend, setSpend] = useState<{ credit?: number } | null>(null);
+  const targetRef = useRef(config.target);
+  const updateConfigRef = useRef(updateConfig);
+  targetRef.current = config.target;
+  updateConfigRef.current = updateConfig;
+
+  const refreshVast = useCallback(async () => {
+    setVastLoading(true);
+    try {
+      const [oRes, sRes] = await Promise.all([
+        fetchWithHeaders(`${baseUrl}/jobs/runners/vast/offers`),
+        fetchWithHeaders(`${baseUrl}/jobs/runners/vast/spend`),
+      ]);
+      if (oRes.ok) {
+        const body = await oRes.json();
+        const next: VastOffer[] = body.offers || [];
+        setOffers(next);
+
+        // Drop a selected offer that disappeared from the marketplace.
+        const current = targetRef.current;
+        const selected = current.offer_id;
+        if (
+          current.runner === "vast" &&
+          selected &&
+          !next.some((o) => String(o.id) === String(selected))
+        ) {
+          updateConfigRef.current("target", {
+            runner: "vast",
+            offer_id: undefined,
+          });
+        }
+      }
+      if (sRes.ok) setSpend(await sRes.json());
+    } catch {
+      /* vast optional without key */
+    } finally {
+      setVastLoading(false);
+    }
+  }, [baseUrl, fetchWithHeaders]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setVastLoading(true);
-      try {
-        const [oRes, sRes] = await Promise.all([
-          fetchWithHeaders(`${baseUrl}/jobs/runners/vast/offers`),
-          fetchWithHeaders(`${baseUrl}/jobs/runners/vast/spend`),
-        ]);
-        if (cancelled) return;
-        if (oRes.ok) {
-          const body = await oRes.json();
-          setOffers(body.offers || []);
-        }
-        if (sRes.ok) setSpend(await sRes.json());
-      } catch {
-        /* vast optional without key */
-      } finally {
-        if (!cancelled) setVastLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [baseUrl, fetchWithHeaders]);
+    void refreshVast();
+  }, [refreshVast]);
 
   const target = config.target;
   const value =
@@ -115,7 +133,23 @@ const TargetCard: React.FC<TargetCardProps> = ({
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <Label className="text-zinc-300">Run training on</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-zinc-300">Run training on</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void refreshVast()}
+              disabled={vastLoading}
+              className="h-7 px-2 text-zinc-400 hover:text-white hover:bg-zinc-900"
+              title="Refresh Vast GPU offers"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 mr-1.5 ${vastLoading ? "animate-spin" : ""}`}
+              />
+              Refresh GPUs
+            </Button>
+          </div>
           <Select value={value} onValueChange={handleChange}>
             <SelectTrigger className="bg-black border-zinc-800 text-white rounded-lg mt-1">
               <SelectValue
@@ -159,7 +193,7 @@ const TargetCard: React.FC<TargetCardProps> = ({
             </SelectContent>
           </Select>
           <p className="text-xs text-zinc-500 mt-1">
-            Vast options are under $3/hr, sorted by DL performance. Set
+            Vast offers go stale quickly — refresh before starting. Set
             VAST_API_KEY in .env.
           </p>
           {spend?.credit != null && (

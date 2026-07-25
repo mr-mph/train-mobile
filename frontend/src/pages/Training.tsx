@@ -229,8 +229,16 @@ const ConfigurationMode: React.FC = () => {
     setIsStarting(true);
     try {
       const job = await startTrainingJob(baseUrl, fetchWithHeaders, configToRequest(trainingConfig));
-      toast({ title: "Training Started", description: job.name });
-      navigate(`/training/${job.id}`);
+      const isVast = trainingConfig.target.runner === "vast";
+      toast({
+        title: isVast ? "Provisioning Vast…" : "Training Started",
+        description: isVast
+          ? `${job.name} — status is on the Jobs screen`
+          : job.name,
+      });
+      // Vast provision can take minutes; leave the config page and show live
+      // status on the main Jobs list instead of blocking here.
+      navigate(isVast ? "/?tab=train" : `/training/${job.id}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast({ title: "Error", description: msg, variant: "destructive" });
@@ -585,13 +593,40 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
   }
 
   const isRunning = job.state === "running";
+  const isProvisioning =
+    isRunning && Boolean(job.status_message) && job.metrics.total_steps === 0;
+  const [provisionElapsed, setProvisionElapsed] = useState(() =>
+    Math.max(0, Date.now() / 1000 - job.started_at),
+  );
+
+  useEffect(() => {
+    if (!isProvisioning) return;
+    const tick = () =>
+      setProvisionElapsed(Math.max(0, Date.now() / 1000 - job.started_at));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [isProvisioning, job.started_at]);
+
+  const formatElapsed = (seconds: number): string => {
+    const s = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(s / 3600);
+    const minutes = Math.floor((s % 3600) / 60);
+    const secs = s % 60;
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs
+        .toString()
+        .padStart(2, "0")}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, "0")}`;
+  };
 
   return (
     <div className="min-h-screen bg-black text-white p-4">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" onClick={() => navigate("/")} className="text-zinc-400 hover:text-white">
+            <Button variant="ghost" onClick={() => navigate("/?tab=train")} className="text-zinc-400 hover:text-white">
               <ArrowLeft className="w-4 h-4 mr-2" /> Jobs
             </Button>
             <div>
@@ -632,7 +667,9 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
                 )}
               </div>
               <p className="text-xs text-zinc-400">
-                {job.state}
+                {isProvisioning
+                  ? `${job.status_message} · ${formatElapsed(provisionElapsed)}`
+                  : job.state}
                 {job.error_message ? ` — ${job.error_message}` : ""}
               </p>
             </div>

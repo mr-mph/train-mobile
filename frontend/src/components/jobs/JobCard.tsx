@@ -35,6 +35,19 @@ function relativeTime(epochSec: number): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function formatElapsed(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(s / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}`;
+  }
+  return `${minutes}:${secs.toString().padStart(2, "0")}`;
+}
+
 const statePresentation: Record<
   JobRecord["state"],
   { label: string; color: string; Icon: React.ComponentType<{ className?: string }> }
@@ -53,22 +66,45 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
   const isRunning = job.state === "running";
   const isImported = job.runner === "imported";
   const importedSource = job.hf_repo_id || job.output_dir;
-  const stateLabel = isImported ? "Imported" : present.label;
-  const isStarting = isRunning && job.metrics.total_steps === 0;
+  const isProvisioning =
+    isRunning &&
+    Boolean(job.status_message) &&
+    job.metrics.total_steps === 0;
+  const isStarting = isRunning && job.metrics.total_steps === 0 && !isProvisioning;
+  const stateLabel = isImported
+    ? "Imported"
+    : isProvisioning
+      ? "Starting"
+      : present.label;
   const progressPct =
     job.metrics.total_steps > 0
       ? Math.min(100, (job.metrics.current_step / job.metrics.total_steps) * 100)
       : 0;
 
+  const [elapsedSec, setElapsedSec] = useState(() =>
+    Math.max(0, Date.now() / 1000 - job.started_at),
+  );
+
+  useEffect(() => {
+    if (!isProvisioning && !isStarting) return;
+    const tick = () =>
+      setElapsedSec(Math.max(0, Date.now() / 1000 - job.started_at));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [isProvisioning, isStarting, job.started_at]);
+
   const subtitle = isImported
     ? importedSource
-    : isStarting
-    ? "starting…"
-    : isRunning
-    ? `started ${relativeTime(job.started_at)}`
-    : job.ended_at != null
-    ? `ended ${relativeTime(job.ended_at)}`
-    : present.label.toLowerCase();
+    : isProvisioning
+      ? `${job.status_message} · ${formatElapsed(elapsedSec)}`
+      : isStarting
+        ? `starting… · ${formatElapsed(elapsedSec)}`
+        : isRunning
+          ? `started ${relativeTime(job.started_at)}`
+          : job.ended_at != null
+            ? `ended ${relativeTime(job.ended_at)}`
+            : present.label.toLowerCase();
 
   const [checkpoints, setCheckpoints] = useState<JobCheckpoint[]>([]);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
@@ -124,6 +160,11 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
 
   const showProgressBar = isRunning;
   const showInferenceRow = checkpoints.length > 0 && selectedStep != null;
+  const progressLabel = isProvisioning
+    ? `Waiting ${formatElapsed(elapsedSec)}`
+    : isStarting
+      ? "Training starting…"
+      : `${progressPct.toFixed(1)}%`;
 
   return (
     <Card
@@ -189,10 +230,13 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
           <div className="relative h-5 w-full overflow-hidden rounded-md bg-black border border-zinc-800">
             <div
               className="h-full bg-gradient-to-r from-green-600 to-green-400 transition-[width] duration-500"
-              style={{ width: `${progressPct}%` }}
+              style={{ width: `${isProvisioning || isStarting ? 100 : progressPct}%` }}
             />
+            {(isProvisioning || isStarting) && (
+              <div className="absolute inset-0 bg-zinc-900/60" />
+            )}
             <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white tabular-nums drop-shadow">
-              {isStarting ? "Training starting…" : `${progressPct.toFixed(1)}%`}
+              {progressLabel}
             </div>
           </div>
         ) : null}

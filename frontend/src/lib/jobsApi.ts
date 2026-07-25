@@ -70,6 +70,7 @@ export interface JobRecord {
   hf_repo_id: string | null;
   hf_job_url: string | null;
   wandb_run_url: string | null;
+  status_message?: string | null;
   checkpoint_count: number;
 }
 
@@ -81,6 +82,7 @@ export interface JobProgressSnapshot {
   metrics: TrainingMetrics;
   wandb_run_url: string | null;
   checkpoint_count: number;
+  status_message?: string | null;
 }
 
 export async function listJobs(

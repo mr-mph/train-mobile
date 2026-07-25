@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,7 +41,43 @@ const TABS: { id: MainTab; label: string }[] = [
 ];
 
 const Landing = () => {
-  const [tab, setTab] = useState<MainTab>("teleop");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const initialTab: MainTab =
+    tabParam === "record" ||
+    tabParam === "train" ||
+    tabParam === "rollout" ||
+    tabParam === "teleop"
+      ? tabParam
+      : "teleop";
+  const [tab, setTabState] = useState<MainTab>(initialTab);
+
+  const setTab = useCallback(
+    (next: MainTab) => {
+      setTabState(next);
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          if (next === "teleop") p.delete("tab");
+          else p.set("tab", next);
+          return p;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  useEffect(() => {
+    if (
+      tabParam === "record" ||
+      tabParam === "train" ||
+      tabParam === "rollout" ||
+      tabParam === "teleop"
+    ) {
+      setTabState(tabParam);
+    }
+  }, [tabParam]);
   const [showUsageModal, setShowUsageModal] = useState(ON_SPACE);
   const { auth } = useHfAuth();
   const { baseUrl, fetchWithHeaders } = useApi();

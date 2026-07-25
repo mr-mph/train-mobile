@@ -106,6 +106,8 @@ const JobsSection: React.FC = () => {
           metrics: s.metrics,
           wandb_run_url: s.wandb_run_url,
           checkpoint_count: s.checkpoint_count,
+          status_message:
+            s.status_message !== undefined ? s.status_message : j.status_message,
         };
       });
       return mutated ? next : prev;
@@ -175,8 +177,12 @@ const JobsSection: React.FC = () => {
     () => filteredJobs.filter((j) => j.runner === "local"),
     [filteredJobs],
   );
+  // Cloud runners tracked by this app (HF Jobs + Vast).
   const trackedCloudJobs = useMemo(
-    () => filteredJobs.filter((j) => j.runner === "hf_cloud"),
+    () =>
+      filteredJobs.filter(
+        (j) => j.runner === "hf_cloud" || j.runner === "vast",
+      ),
     [filteredJobs],
   );
   const importedJobs = useMemo(
@@ -189,6 +195,7 @@ const JobsSection: React.FC = () => {
     () =>
       new Set(
         trackedCloudJobs
+          .filter((j) => j.runner === "hf_cloud")
           .map((j) => j.hf_job_id)
           .filter((id): id is string => !!id),
       ),
@@ -205,6 +212,7 @@ const JobsSection: React.FC = () => {
     () =>
       new Set(
         trackedCloudJobs
+          .filter((j) => j.runner === "hf_cloud")
           .map((j) => j.hf_repo_id)
           .filter((id): id is string => !!id),
       ),
@@ -347,9 +355,13 @@ const JobsSection: React.FC = () => {
           )
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3">
-          {!hubAuthenticated && trackedCloudJobs.length === 0 ? (
+          {!hubAuthenticated &&
+          trackedCloudJobs.length === 0 &&
+          untrackedHubJobs.length === 0 &&
+          untrackedHubModels.length === 0 ? (
             <p className="text-sm text-zinc-500">
-              Sign in with Hugging Face to see your cloud jobs.
+              Sign in with Hugging Face to see your cloud jobs, or start a Vast
+              run from Training.
             </p>
           ) : trackedCloudActive.length === 0 &&
             untrackedHubActive.length === 0 &&
