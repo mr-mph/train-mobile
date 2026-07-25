@@ -233,22 +233,186 @@ class _CameraWorker:
             logger.info("Released preview capture for camera index %s", self.index)
 
 
+class _RelaySlot:
+    """JPEG buffer fed by an external owner (e.g. the recording loop).
+
+    Same consumer API as ``_CameraWorker`` so WS/HTTP preview paths work while
+    OpenCV devices are held exclusively by recording/inference.
+    """
+
+    def __init__(
+        self,
+        index: int,
+        width: int,
+        height: int,
+        *,
+        quality: int = _JPEG_QUALITY,
+    ) -> None:
+        self.index = index
+        self.width = width
+        self.height = height
+        self.fps = _DEFAULT_FPS
+        self.quality = max(20, min(int(quality), 85))
+        self._cond = threading.Condition()
+        self._jpeg: bytes | None = None
+        self._captured_at: float | None = None
+        self._seq = 0
+        self._fatal: str | None = None
+        self._stream_clients = 0
+        self._last_used = time.monotonic()
+        self._encode_params: list[int] | None = None
+        self._min_interval = 1.0 / 15.0
+        self._last_push = 0.0
+
+    def touch(self) -> None:
+        with self._cond:
+            self._last_used = time.monotonic()
+
+    def add_stream_client(self) -> None:
+        with self._cond:
+            self._stream_clients += 1
+            self._last_used = time.monotonic()
+
+    def remove_stream_client(self) -> int:
+        with self._cond:
+            self._stream_clients = max(0, self._stream_clients - 1)
+            self._last_used = time.monotonic()
+            return self._stream_clients
+
+    def idle_for(self) -> float:
+        with self._cond:
+            if self._stream_clients > 0:
+                return 0.0
+            return time.monotonic() - self._last_used
+
+    def latest_jpeg(self) -> bytes | None:
+        with self._cond:
+            return self._jpeg
+
+    def latest_packet(self) -> tuple[bytes | None, int, int]:
+        with self._cond:
+            age_ms = 0
+            if self._jpeg is not None and self._captured_at is not None:
+                age_ms = max(0, int((time.monotonic() - self._captured_at) * 1000))
+            return self._jpeg, self._seq, age_ms
+
+    def wait_jpeg(self, timeout: float = 5.0) -> bytes | None:
+        deadline = time.monotonic() + timeout
+        with self._cond:
+            while self._jpeg is None and self._fatal is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._cond.wait(timeout=remaining)
+            return self._jpeg
+
+    def wait_next_jpeg(self, after_seq: int, timeout: float) -> tuple[bytes | None, int, int]:
+        deadline = time.monotonic() + timeout
+        with self._cond:
+            while self._seq <= after_seq and self._fatal is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._cond.wait(timeout=remaining)
+            age_ms = 0
+            if self._jpeg is not None and self._captured_at is not None:
+                age_ms = max(0, int((time.monotonic() - self._captured_at) * 1000))
+            return self._jpeg, self._seq, age_ms
+
+    def error(self) -> str | None:
+        with self._cond:
+            return self._fatal
+
+    def stop(self) -> None:
+        with self._cond:
+            self._cond.notify_all()
+
+    def push_bgr(self, frame: Any) -> None:
+        """Encode a BGR (or RGB HxWx3) ndarray and publish it."""
+        now = time.monotonic()
+        if now - self._last_push < self._min_interval:
+            return
+        self._last_push = now
+
+        import cv2
+        import numpy as np
+
+        if frame is None:
+            return
+        arr = np.asarray(frame)
+        if arr.ndim != 3 or arr.shape[2] not in (3, 4):
+            return
+
+        h, w = arr.shape[:2]
+        if w != self.width or h != self.height:
+            arr = cv2.resize(arr, (self.width, self.height), interpolation=cv2.INTER_AREA)
+
+        if self._encode_params is None:
+            self._encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self.quality]
+        ok, buf = cv2.imencode(".jpg", arr, self._encode_params)
+        if not ok:
+            return
+        captured_at = time.monotonic()
+        with self._cond:
+            self._jpeg = buf.tobytes()
+            self._captured_at = captured_at
+            self._seq += 1
+            self._fatal = None
+            self._last_used = captured_at
+            self._cond.notify_all()
+
+
 class CameraHub:
     """Process-wide registry of preview captures."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._workers: dict[int, _CameraWorker] = {}
+        self._relays: dict[int, _RelaySlot] = {}
 
     def stop_all(self) -> dict[str, Any]:
         """Release every preview capture so recording/inference can open devices."""
         with self._lock:
             workers = list(self._workers.values())
             self._workers.clear()
+            # Keep relays — recording may still be pushing frames.
         for worker in workers:
             worker.stop()
         logger.info("Stopped %d camera preview capture(s)", len(workers))
         return {"success": True, "stopped": len(workers)}
+
+    def begin_relay(
+        self,
+        camera_indices: list[int],
+        *,
+        width: int = _DEFAULT_WIDTH,
+        height: int = _DEFAULT_HEIGHT,
+        quality: int = _JPEG_QUALITY,
+    ) -> None:
+        """Switch listed indices to externally pushed frames (no OpenCV open)."""
+        self.stop_all()
+        with self._lock:
+            for slot in self._relays.values():
+                slot.stop()
+            self._relays = {
+                int(idx): _RelaySlot(int(idx), width, height, quality=quality)
+                for idx in camera_indices
+                if idx is not None and int(idx) >= 0
+            }
+        logger.info("Camera preview relay enabled for indices %s", sorted(self._relays))
+
+    def end_relay(self) -> None:
+        with self._lock:
+            for slot in self._relays.values():
+                slot.stop()
+            self._relays.clear()
+        logger.info("Camera preview relay disabled")
+
+    def push_relay_frame(self, index: int, frame: Any) -> None:
+        with self._lock:
+            slot = self._relays.get(index)
+        if slot is not None:
+            slot.push_bgr(frame)
 
     def _reap_idle_unlocked(self) -> None:
         stale = [
@@ -268,8 +432,12 @@ class CameraHub:
         fps: float,
         *,
         quality: int,
-    ) -> _CameraWorker:
+    ) -> _CameraWorker | _RelaySlot:
         with self._lock:
+            relay = self._relays.get(index)
+            if relay is not None:
+                relay.touch()
+                return relay
             self._reap_idle_unlocked()
             worker = self._workers.get(index)
             if worker is not None and (
@@ -319,12 +487,12 @@ class CameraHub:
         height: int = _DEFAULT_HEIGHT,
         fps: float = _DEFAULT_FPS,
         quality: int = _JPEG_QUALITY,
-    ) -> _CameraWorker:
+    ) -> _CameraWorker | _RelaySlot:
         worker = self._ensure_worker(index, width, height, fps, quality=quality)
         worker.add_stream_client()
         return worker
 
-    def close_stream(self, worker: _CameraWorker) -> None:
+    def close_stream(self, worker: _CameraWorker | _RelaySlot) -> None:
         worker.remove_stream_client()
 
     def mjpeg_frames(

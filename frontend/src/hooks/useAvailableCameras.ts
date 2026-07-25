@@ -75,14 +75,14 @@ export function useAvailableCameras({
         const label = cam.name || `Camera ${cam.index}`;
         const target = norm(label);
         const candidates = browserDevices.filter(
-          (d) => !used.has(d.deviceId) && d.label
+          (d) => !used.has(d.deviceId) && d.label,
         );
         const match =
           candidates.find((d) => norm(d.label) === target) ||
           candidates.find((d) => norm(d.label).startsWith(target)) ||
           candidates.find(
             (d) =>
-              norm(d.label).includes(target) || target.includes(norm(d.label))
+              norm(d.label).includes(target) || target.includes(norm(d.label)),
           );
         if (match) used.add(match.deviceId);
         return {

@@ -807,28 +807,81 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
             teleop.configure()
         logger.info("✅ Devices ready")
 
-        def begin_phase(name: str) -> None:
-            global current_phase, phase_start_time, phase_paused_total, phase_pause_started
-            current_phase = name
-            phase_start_time = time.time()
-            phase_paused_total = 0.0
-            phase_pause_started = None
-            web_events["paused"] = False
-            web_events["exit_early"] = False
-            web_events["_exit_early_triggered"] = False
+        # Live phone preview while recording owns the USB devices: push frames
+        # from robot.get_observation() into the camera hub relay (no second open).
+        from .camera_stream import camera_hub
 
-        # Operator-driven: ready (teleop, waiting for Start) ↔ recording.
-        # Restart discards the buffer and re-enters recording immediately.
-        restart_immediately = False
-        while not web_events["stop_recording"]:
-            if not restart_immediately:
-                begin_phase("ready")
-                logger.info(
-                    "Ready for episode %s — waiting for Start episode",
-                    current_episode,
-                )
-                print(f"⏸️  STATUS CHANGE: Ready — start episode {current_episode} when set")
-                log_say(f"Ready for episode {current_episode}", cfg.play_sounds)
+        name_to_index: dict[str, int] = {}
+        for cam_name, cam_cfg in (cfg.robot.cameras or {}).items():
+            idx = getattr(cam_cfg, "index_or_path", None)
+            if isinstance(idx, int) and idx >= 0:
+                name_to_index[cam_name] = idx
+        _orig_get_observation = None
+        if name_to_index:
+            camera_hub.begin_relay(list(name_to_index.values()))
+            _orig_get_observation = robot.get_observation
+
+            def get_observation_with_preview():
+                obs = _orig_get_observation()
+                for cam_name, cam_index in name_to_index.items():
+                    frame = obs.get(cam_name)
+                    if frame is not None:
+                        camera_hub.push_relay_frame(cam_index, frame)
+                return obs
+
+            robot.get_observation = get_observation_with_preview  # type: ignore[method-assign]
+
+        try:
+            def begin_phase(name: str) -> None:
+                global current_phase, phase_start_time, phase_paused_total, phase_pause_started
+                current_phase = name
+                phase_start_time = time.time()
+                phase_paused_total = 0.0
+                phase_pause_started = None
+                web_events["paused"] = False
+                web_events["exit_early"] = False
+                web_events["_exit_early_triggered"] = False
+
+            # Operator-driven: ready (teleop, waiting for Start) ↔ recording.
+            # Restart discards the buffer and re-enters recording immediately.
+            restart_immediately = False
+            while not web_events["stop_recording"]:
+                if not restart_immediately:
+                    begin_phase("ready")
+                    logger.info(
+                        "Ready for episode %s — waiting for Start episode",
+                        current_episode,
+                    )
+                    print(f"⏸️  STATUS CHANGE: Ready — start episode {current_episode} when set")
+                    log_say(f"Ready for episode {current_episode}", cfg.play_sounds)
+
+                    record_loop(
+                        robot=robot,
+                        events=web_events,
+                        fps=cfg.dataset.fps,
+                        teleop_action_processor=teleop_action_processor,
+                        robot_action_processor=robot_action_processor,
+                        robot_observation_processor=robot_observation_processor,
+                        teleop=teleop,
+                        control_time_s=cfg.dataset.reset_time_s,
+                        single_task=cfg.dataset.single_task,
+                        display_data=cfg.display_data,
+                    )
+
+                    if web_events.get("_exit_early_triggered"):
+                        web_events["_exit_early_triggered"] = False
+                        web_events["exit_early"] = False
+
+                    if web_events["stop_recording"]:
+                        logger.info("🛑 STOP during ready — ending session")
+                        break
+
+                restart_immediately = False
+
+                begin_phase("recording")
+                logger.info("Starting recording phase for episode %s", current_episode)
+                print(f"🎬 STATUS CHANGE: Starting recording phase for episode {current_episode}")
+                log_say(f"Recording episode {current_episode}", cfg.play_sounds)
 
                 record_loop(
                     robot=robot,
@@ -838,87 +891,63 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
                     robot_action_processor=robot_action_processor,
                     robot_observation_processor=robot_observation_processor,
                     teleop=teleop,
-                    control_time_s=cfg.dataset.reset_time_s,
+                    dataset=dataset,
+                    control_time_s=cfg.dataset.episode_time_s,
                     single_task=cfg.dataset.single_task,
                     display_data=cfg.display_data,
                 )
 
-                if web_events.get("_exit_early_triggered"):
+                user_ended_phase = web_events.get("_exit_early_triggered", False)
+                if user_ended_phase:
+                    logger.info("🟡 RECORDING PHASE ENDED BY OPERATOR")
                     web_events["_exit_early_triggered"] = False
+                else:
+                    logger.info("⏰ RECORDING PHASE HIT SAFETY TIME LIMIT — saving episode")
+                    print(
+                        f"⏰ STATUS CHANGE: Safety time limit for episode {current_episode} — saving"
+                    )
+
+                if web_events["rerecord_episode"]:
+                    log_say("Re-record episode", cfg.play_sounds)
+                    print(
+                        f"🔄 STATUS CHANGE: Restarting episode {current_episode} (not saved)"
+                    )
+                    web_events["rerecord_episode"] = False
                     web_events["exit_early"] = False
+                    dataset.clear_episode_buffer()
+                    if web_events["stop_recording"]:
+                        break
+                    restart_immediately = True
+                    continue
 
-                if web_events["stop_recording"]:
-                    logger.info("🛑 STOP during ready — ending session")
+                # Stop mid-episode without ending it: discard buffer.
+                if web_events["stop_recording"] and not user_ended_phase:
+                    logger.info("🛑 STOP mid-episode — discarding unsaved buffer")
+                    dataset.clear_episode_buffer()
                     break
 
-            restart_immediately = False
+                logger.info("💾 Saving episode %s...", current_episode)
+                print(f"💾 STATUS CHANGE: Saving episode {current_episode}")
+                dataset.save_episode()
+                logger.info("✅ Episode %s saved successfully", current_episode)
+                print(f"✅ STATUS CHANGE: Episode {current_episode} saved successfully")
 
-            begin_phase("recording")
-            logger.info("Starting recording phase for episode %s", current_episode)
-            print(f"🎬 STATUS CHANGE: Starting recording phase for episode {current_episode}")
-            log_say(f"Recording episode {current_episode}", cfg.play_sounds)
+                saved_episodes += 1
+                current_episode += 1
 
-            record_loop(
-                robot=robot,
-                events=web_events,
-                fps=cfg.dataset.fps,
-                teleop_action_processor=teleop_action_processor,
-                robot_action_processor=robot_action_processor,
-                robot_observation_processor=robot_observation_processor,
-                teleop=teleop,
-                dataset=dataset,
-                control_time_s=cfg.dataset.episode_time_s,
-                single_task=cfg.dataset.single_task,
-                display_data=cfg.display_data,
-            )
-
-            user_ended_phase = web_events.get("_exit_early_triggered", False)
-            if user_ended_phase:
-                logger.info("🟡 RECORDING PHASE ENDED BY OPERATOR")
-                web_events["_exit_early_triggered"] = False
-            else:
-                logger.info("⏰ RECORDING PHASE HIT SAFETY TIME LIMIT — saving episode")
-                print(
-                    f"⏰ STATUS CHANGE: Safety time limit for episode {current_episode} — saving"
-                )
-
-            if web_events["rerecord_episode"]:
-                log_say("Re-record episode", cfg.play_sounds)
-                print(
-                    f"🔄 STATUS CHANGE: Restarting episode {current_episode} (not saved)"
-                )
-                web_events["rerecord_episode"] = False
-                web_events["exit_early"] = False
-                dataset.clear_episode_buffer()
                 if web_events["stop_recording"]:
+                    print("🛑 STATUS CHANGE: Recording stopped by operator")
                     break
-                restart_immediately = True
-                continue
 
-            # Stop mid-episode without ending it: discard buffer.
-            if web_events["stop_recording"] and not user_ended_phase:
-                logger.info("🛑 STOP mid-episode — discarding unsaved buffer")
-                dataset.clear_episode_buffer()
-                break
-
-            logger.info("💾 Saving episode %s...", current_episode)
-            print(f"💾 STATUS CHANGE: Saving episode {current_episode}")
-            dataset.save_episode()
-            logger.info("✅ Episode %s saved successfully", current_episode)
-            print(f"✅ STATUS CHANGE: Episode {current_episode} saved successfully")
-
-            saved_episodes += 1
-            current_episode += 1
-
-            if web_events["stop_recording"]:
-                print("🛑 STATUS CHANGE: Recording stopped by operator")
-                break
-
-        # Recording completed
-        current_phase = "completed"
-        phase_start_time = None
-        print("🏁 STATUS CHANGE: Recording session completed")
-        log_say("Stop recording", cfg.play_sounds, blocking=True)
+            # Recording completed
+            current_phase = "completed"
+            phase_start_time = None
+            print("🏁 STATUS CHANGE: Recording session completed")
+            log_say("Stop recording", cfg.play_sounds, blocking=True)
+        finally:
+            if _orig_get_observation is not None:
+                robot.get_observation = _orig_get_observation  # type: ignore[method-assign]
+            camera_hub.end_relay()
 
     finally:
         try:

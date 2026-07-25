@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +18,9 @@ import {
   playResetStartCue,
 } from "@/lib/recordingAudio";
 import { useApi } from "@/contexts/ApiContext";
+import TeleopCameraPanel, {
+  type CameraFeedSpec,
+} from "@/components/control/TeleopCameraPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,6 +44,10 @@ interface RecordingConfig {
   push_to_hub: boolean;
   resume: boolean;
   streaming_encoding: boolean;
+  cameras?: Record<
+    string,
+    { camera_index?: number; type?: string; [key: string]: unknown }
+  >;
 }
 
 type Phase = "preparing" | "ready" | "resetting" | "recording" | "completed";
@@ -379,6 +386,16 @@ const Recording = () => {
     await handleStopRecording();
   }, [handleStopRecording]);
 
+  const cameraFeeds: CameraFeedSpec[] = useMemo(() => {
+    const cams = recordingConfig?.cameras ?? {};
+    return Object.entries(cams).map(([name, cfg]) => ({
+      key: name,
+      name,
+      cameraIndex:
+        typeof cfg.camera_index === "number" ? cfg.camera_index : undefined,
+    }));
+  }, [recordingConfig?.cameras]);
+
   if (!recordingConfig) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
@@ -472,194 +489,106 @@ const Recording = () => {
 
   return (
     <div
-      className="min-h-screen bg-black text-white p-4 sm:p-8 pb-36 sm:pb-8"
-      style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
+      className="min-h-screen bg-black text-white flex flex-col"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
     >
-      <div className="max-w-2xl mx-auto">
-        <div className="mb-8">
-          <Button
-            onClick={() => navigate("/")}
-            variant="outline"
-            className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white"
+      <header className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate("/")}
+          className="h-9 w-9 text-gray-400 hover:text-white hover:bg-black flex-shrink-0"
+          aria-label="Back to home"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div
+            role="status"
+            aria-live="polite"
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-widest ${phaseColor.pill}`}
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Home
-          </Button>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${phaseColor.dot} ${
+                currentPhase !== "completed" && !isPaused ? "animate-pulse" : ""
+              }`}
+            />
+            {statusText}
+          </div>
+          <span className="text-xs text-zinc-400">
+            Ep{" "}
+            <span className="text-white font-semibold">{currentEpisode}</span>
+            <span className="mx-1 text-zinc-600">·</span>
+            <span className="text-white font-semibold">{savedEpisodes}</span>{" "}
+            saved
+          </span>
         </div>
-
-        <div className="bg-black rounded-lg border border-zinc-800 p-8">
-          <div className="flex justify-end items-center gap-4 mb-6 text-sm text-gray-400">
-            <span
-              aria-label={`Episode ${currentEpisode}, ${savedEpisodes} saved`}
-            >
-              Episode{" "}
-              <span className="text-white font-semibold">{currentEpisode}</span>
-              <span className="mx-1 text-zinc-600">·</span>
-              <span className="text-white font-semibold">{savedEpisodes}</span>{" "}
-              saved
-            </span>
-            <span
-              className="font-mono"
-              aria-label={`Total session time ${formatTime(sessionElapsedTime)}`}
-            >
-              {formatTime(sessionElapsedTime)}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleMute}
-              aria-label={muted ? "Unmute" : "Mute"}
-              className="h-8 w-8 text-gray-400 hover:text-white hover:bg-black"
-            >
-              {muted ? (
-                <VolumeX className="w-5 h-5" />
-              ) : (
-                <Volume2 className="w-5 h-5" />
-              )}
-            </Button>
-          </div>
-
-          <div className="text-center mb-6">
-            <div
-              role="status"
-              aria-live="polite"
-              className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold tracking-widest ${phaseColor.pill}`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${phaseColor.dot} ${
-                  currentPhase !== "completed" && !isPaused
-                    ? "animate-pulse"
-                    : ""
-                }`}
-              />
-              {statusText}
-            </div>
-          </div>
-
-          <div className="text-center mb-8">
-            <div
-              className={`text-7xl font-mono font-bold leading-none ${phaseColor.timer}`}
-            >
-              {formatTime(phaseElapsedTime)}
-            </div>
-            <div className="text-sm text-gray-500 mt-2">
-              {isRecording
-                ? isPaused
-                  ? "Paused — resume when ready"
-                  : "Elapsed this episode"
-                : isReady
-                  ? "Waiting — start when ready"
-                  : "Session time"}
-            </div>
-          </div>
-
-          {/* Desktop controls */}
-          <div className="hidden sm:flex flex-col gap-3">
-            {isReady && (
-              <Button
-                onClick={handleStartOrEndEpisode}
-                disabled={!canAdvance || optimisticPhase !== null}
-                className="w-full text-white font-semibold py-6 text-lg bg-green-500 hover:bg-green-600 disabled:opacity-50"
-              >
-                <Play className="w-5 h-5 mr-2" />
-                {startLabel}
-              </Button>
-            )}
-
-            {isRecording && (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    onClick={handlePauseToggle}
-                    disabled={!canPauseToggle}
-                    variant="outline"
-                    className="py-6 text-lg border-zinc-700"
-                  >
-                    {isPaused ? (
-                      <>
-                        <Play className="w-5 h-5 mr-2" />
-                        Resume
-                      </>
-                    ) : (
-                      <>
-                        <Pause className="w-5 h-5 mr-2" />
-                        Pause
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={handleRestartEpisode}
-                    disabled={!canRestart}
-                    variant="outline"
-                    className="py-6 text-lg border-zinc-700"
-                  >
-                    <RotateCcw className="w-5 h-5 mr-2" />
-                    Restart episode
-                  </Button>
-                </div>
-                <Button
-                  onClick={handleStartOrEndEpisode}
-                  disabled={!canAdvance || optimisticPhase !== null}
-                  className="w-full text-white font-semibold py-6 text-lg bg-green-500 hover:bg-green-600 disabled:opacity-50"
-                >
-                  End episode
-                </Button>
-              </>
-            )}
-
-            <Button
-              onClick={requestStopRecording}
-              disabled={!controls.stop_recording}
-              variant="destructive"
-              className="w-full py-5"
-            >
-              <Square className="w-4 h-4 mr-2" />
-              End recording session
-            </Button>
-          </div>
-
-          {currentPhase === "completed" && (
-            <p className="text-center text-sm text-gray-400 mt-6">
-              Recording complete — redirecting to upload…
-            </p>
+        <span
+          className={`font-mono text-sm tabular-nums ${phaseColor.timer}`}
+          aria-label={`Episode time ${formatTime(phaseElapsedTime)}`}
+        >
+          {formatTime(phaseElapsedTime)}
+        </span>
+        <span className="font-mono text-xs text-zinc-500 tabular-nums hidden sm:inline">
+          {formatTime(sessionElapsedTime)}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleMute}
+          aria-label={muted ? "Unmute" : "Mute"}
+          className="h-9 w-9 text-gray-400 hover:text-white hover:bg-black"
+        >
+          {muted ? (
+            <VolumeX className="w-4 h-4" />
+          ) : (
+            <Volume2 className="w-4 h-4" />
           )}
-        </div>
-      </div>
+        </Button>
+      </header>
 
-      {/* Sticky mobile controls */}
+      <main className="flex-1 flex items-center justify-center p-4 overflow-y-auto pb-36">
+        <TeleopCameraPanel cameras={cameraFeeds} hideHeader />
+      </main>
+
       <div
-        className="fixed bottom-0 inset-x-0 z-40 border-t border-zinc-800 bg-black/95 p-3 sm:hidden"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+        className="fixed bottom-0 inset-x-0 z-40 border-t border-zinc-800 bg-black/95 px-3 pt-2"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.5rem)" }}
       >
-        <div className="flex flex-col gap-2 max-w-lg mx-auto">
+        <div className="flex flex-col gap-1.5 max-w-lg mx-auto">
           {isReady && (
             <Button
               onClick={handleStartOrEndEpisode}
               disabled={!canAdvance || optimisticPhase !== null}
-              className="w-full h-14 text-white font-semibold bg-green-500 hover:bg-green-600"
+              size="sm"
+              className="w-full h-9 text-sm font-medium bg-green-500 hover:bg-green-600 text-black disabled:opacity-50"
             >
-              <Play className="w-5 h-5 mr-2" />
+              <Play className="w-3.5 h-3.5 mr-1.5" />
               {startLabel}
             </Button>
           )}
 
           {isRecording && (
             <>
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 <Button
                   onClick={handlePauseToggle}
                   disabled={!canPauseToggle}
                   variant="outline"
-                  className="flex-1 h-12 border-zinc-700"
+                  size="sm"
+                  className="flex-1 h-9 text-sm border-zinc-700"
                 >
                   {isPaused ? (
                     <>
-                      <Play className="w-4 h-4 mr-2" />
+                      <Play className="w-3.5 h-3.5 mr-1.5" />
                       Resume
                     </>
                   ) : (
                     <>
-                      <Pause className="w-4 h-4 mr-2" />
+                      <Pause className="w-3.5 h-3.5 mr-1.5" />
                       Pause
                     </>
                   )}
@@ -668,31 +597,40 @@ const Recording = () => {
                   onClick={handleRestartEpisode}
                   disabled={!canRestart}
                   variant="outline"
-                  className="flex-1 h-12 border-zinc-700"
+                  size="sm"
+                  className="flex-1 h-9 text-sm border-zinc-700"
                 >
-                  <RotateCcw className="w-4 h-4 mr-2" />
+                  <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                   Restart
                 </Button>
+                <Button
+                  onClick={handleStartOrEndEpisode}
+                  disabled={!canAdvance || optimisticPhase !== null}
+                  size="sm"
+                  className="flex-[1.4] h-9 text-sm font-medium bg-green-500 hover:bg-green-600 text-black disabled:opacity-50"
+                >
+                  End episode
+                </Button>
               </div>
-              <Button
-                onClick={handleStartOrEndEpisode}
-                disabled={!canAdvance || optimisticPhase !== null}
-                className="w-full h-14 text-white font-semibold bg-green-500 hover:bg-green-600"
-              >
-                End episode
-              </Button>
             </>
           )}
 
           <Button
             onClick={requestStopRecording}
             disabled={!controls.stop_recording}
-            variant="destructive"
-            className="w-full h-12"
+            variant="ghost"
+            size="sm"
+            className="w-full h-8 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10"
           >
-            <Square className="w-4 h-4 mr-2" />
-            End recording session
+            <Square className="w-3 h-3 mr-1.5" />
+            End session
           </Button>
+
+          {currentPhase === "completed" && (
+            <p className="text-center text-xs text-gray-400 pb-1">
+              Recording complete — redirecting…
+            </p>
+          )}
         </div>
       </div>
 

@@ -233,7 +233,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             <VideoOff className="w-8 h-8 text-gray-500 mb-2" />
             <span className="text-gray-500 text-sm">
               {paused
-                ? "Preview paused"
+                ? "Cameras in use"
                 : cameraIndex == null
                   ? "No camera selected"
                   : "Preview failed"}
