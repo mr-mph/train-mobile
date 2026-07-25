@@ -19,7 +19,12 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAvailableCameras } from "@/hooks/useAvailableCameras";
 import { useApi } from "@/contexts/ApiContext";
-import CameraFeed from "@/components/control/CameraFeed";
+import CameraFeed, {
+  PREVIEW_FPS,
+  PREVIEW_HEIGHT,
+  PREVIEW_QUALITY,
+  PREVIEW_WIDTH,
+} from "@/components/control/CameraFeed";
 
 // Sentinels distinguish "leave unset" (auto-detect / platform default) from an
 // explicit choice. Radix Select disallows an empty-string value, so we map these
@@ -354,9 +359,10 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
     <div className="bg-black rounded-lg border border-zinc-800 overflow-hidden">
       <CameraFeed
         cameraIndex={camera.camera_index}
-        width={camera.width}
-        height={camera.height}
-        fps={camera.fps ?? 15}
+        width={PREVIEW_WIDTH}
+        height={PREVIEW_HEIGHT}
+        fps={PREVIEW_FPS}
+        quality={PREVIEW_QUALITY}
         paused={paused}
       />
 

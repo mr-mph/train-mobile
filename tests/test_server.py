@@ -41,6 +41,7 @@ REQUIRED_PATHS = {
     "/available-ports",
     "/available-cameras",
     "/cameras/{camera_index}/mjpeg",
+    "/cameras/{camera_index}/frame.jpg",
     "/cameras/preview/stop",
     "/hf-auth-status",
     "/ws/joint-data",

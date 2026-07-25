@@ -2,7 +2,12 @@ import React, { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRobots } from "@/hooks/useRobots";
-import CameraFeed from "./CameraFeed";
+import CameraFeed, {
+  PREVIEW_FPS,
+  PREVIEW_HEIGHT,
+  PREVIEW_QUALITY,
+  PREVIEW_WIDTH,
+} from "./CameraFeed";
 
 /** Live Mac camera feeds for teleop — always streaming when cameras are configured. */
 const TeleopCameraPanel: React.FC = () => {
@@ -14,9 +19,6 @@ const TeleopCameraPanel: React.FC = () => {
     key: c.id,
     name: c.name,
     cameraIndex: c.camera_index,
-    width: c.width ?? 640,
-    height: c.height ?? 480,
-    fps: c.fps ?? 15,
   }));
 
   return (
@@ -44,9 +46,10 @@ const TeleopCameraPanel: React.FC = () => {
             <CameraFeed
               key={`${feed.key}:${reloadKey}`}
               cameraIndex={feed.cameraIndex}
-              width={feed.width}
-              height={feed.height}
-              fps={feed.fps}
+              width={PREVIEW_WIDTH}
+              height={PREVIEW_HEIGHT}
+              fps={PREVIEW_FPS}
+              quality={PREVIEW_QUALITY}
               label={feed.name}
               reloadKey={reloadKey}
               className="rounded-lg border border-zinc-800"

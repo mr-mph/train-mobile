@@ -32,7 +32,12 @@ import {
 import { startInference } from "@/lib/inferenceApi";
 import CheckpointDropdown from "@/components/jobs/CheckpointDropdown";
 import { useAvailableCameras } from "@/hooks/useAvailableCameras";
-import CameraFeed from "@/components/control/CameraFeed";
+import CameraFeed, {
+  PREVIEW_FPS,
+  PREVIEW_HEIGHT,
+  PREVIEW_QUALITY,
+  PREVIEW_WIDTH,
+} from "@/components/control/CameraFeed";
 
 const CameraThumbnail: React.FC<{
   cameraIndex: number | null;
@@ -51,9 +56,10 @@ const CameraThumbnail: React.FC<{
   return (
     <CameraFeed
       cameraIndex={cameraIndex}
-      width={320}
-      height={240}
-      fps={15}
+      width={PREVIEW_WIDTH}
+      height={PREVIEW_HEIGHT}
+      fps={PREVIEW_FPS}
+      quality={PREVIEW_QUALITY}
       className="w-32 rounded border border-zinc-800"
       frameClassName="aspect-auto h-24"
     />

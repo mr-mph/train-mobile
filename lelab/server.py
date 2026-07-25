@@ -439,19 +439,23 @@ def start_recording(request: RecordingRequest):
 @app.get("/cameras/{camera_index}/mjpeg")
 def stream_camera_mjpeg(
     camera_index: int,
-    width: int = 640,
-    height: int = 480,
-    fps: float = 15,
+    width: int = 320,
+    height: int = 240,
+    fps: float = 10,
+    quality: int = 45,
 ):
     """Multipart MJPEG preview of a host OpenCV camera (for remote / phone UIs)."""
     if camera_index < 0:
         raise HTTPException(status_code=400, detail="camera_index must be >= 0")
-    width = max(160, min(width, 1920))
-    height = max(120, min(height, 1080))
+    width = max(160, min(width, 1280))
+    height = max(120, min(height, 720))
     fps = max(1.0, min(float(fps), 30.0))
+    quality = max(20, min(int(quality), 85))
 
     try:
-        frames = camera_hub.mjpeg_frames(camera_index, width=width, height=height, fps=fps)
+        frames = camera_hub.mjpeg_frames(
+            camera_index, width=width, height=height, fps=fps, quality=quality
+        )
         # Peek one chunk so open failures surface as HTTP errors, not a hung img.
         first = next(frames)
     except Exception as exc:
@@ -465,7 +469,45 @@ def stream_camera_mjpeg(
     return StreamingResponse(
         gen(),
         media_type="multipart/x-mixed-replace; boundary=frame",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/cameras/{camera_index}/frame.jpg")
+def camera_frame_jpeg(
+    camera_index: int,
+    width: int = 320,
+    height: int = 240,
+    fps: float = 10,
+    quality: int = 45,
+):
+    """Single latest JPEG — preferred for low-latency phone previews (poll this)."""
+    if camera_index < 0:
+        raise HTTPException(status_code=400, detail="camera_index must be >= 0")
+    width = max(160, min(width, 1280))
+    height = max(120, min(height, 720))
+    fps = max(1.0, min(float(fps), 30.0))
+    quality = max(20, min(int(quality), 85))
+
+    try:
+        jpeg = camera_hub.get_jpeg(
+            camera_index, width=width, height=height, fps=fps, quality=quality
+        )
+    except Exception as exc:
+        logger.error("Camera frame failed for index %s: %s", camera_index, exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+        },
     )
 
 
@@ -1454,11 +1496,15 @@ def dataset_trim_episode(repo_id: str, episode: int, body: dict):
 
 
 @app.get("/jobs/runners/vast/offers")
-def vast_offers(gpu: str | None = None, min_vram_gb: float = 16):
+def vast_offers(gpu: str | None = None, min_vram_gb: float = 16, max_dph: float = 3.0):
     from .runners import vast as vast_runner
 
     try:
-        return {"offers": vast_runner.search_offers(gpu_name=gpu, min_vram_gb=min_vram_gb)}
+        return {
+            "offers": vast_runner.search_offers(
+                gpu_name=gpu, min_vram_gb=min_vram_gb, max_dph=max_dph
+            )
+        }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

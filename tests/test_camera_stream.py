@@ -65,3 +65,16 @@ def test_mjpeg_endpoint_returns_503_when_open_fails(mock_worker_cls, client) -> 
     with patch.object(camera_stream.camera_hub, "mjpeg_frames", side_effect=boom):
         response = client.get("/cameras/99/mjpeg")
     assert response.status_code == 503
+
+
+def test_get_jpeg_raises_when_no_frame() -> None:
+    from lelab.camera_stream import CameraHub
+
+    hub = CameraHub()
+    worker = MagicMock()
+    worker.wait_jpeg.return_value = None
+    worker.error.return_value = "Could not open camera index 0"
+    worker.touch = MagicMock()
+    with patch.object(hub, "_ensure_worker", return_value=worker):
+        with pytest.raises(RuntimeError, match="Could not open"):
+            hub.get_jpeg(0)

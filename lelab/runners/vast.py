@@ -53,14 +53,17 @@ def search_offers(
     *,
     gpu_name: str | None = None,
     min_vram_gb: float = 16,
-    limit: int = 24,
+    max_dph: float = 3.0,
+    limit: int = 40,
 ) -> list[dict[str, Any]]:
+    """Return rentable offers under ``max_dph`` $/hr, best ``dlperf`` first."""
     q: dict[str, Any] = {
         "verified": {"eq": True},
         "rentable": {"eq": True},
         "cuda_max_good": {"gte": 11.8},
         "gpu_ram": {"gte": min_vram_gb * 1024},
-        "order": [["dph_total", "asc"]],
+        "dph_total": {"lt": max_dph},
+        "order": [["dlperf", "desc"]],
         "type": "on-demand",
     }
     if gpu_name:
@@ -77,19 +80,35 @@ def search_offers(
 
     offers = data if isinstance(data, list) else data.get("offers") or data.get("bundles") or []
     out: list[dict[str, Any]] = []
-    for o in offers[:limit]:
+    for o in offers:
+        dph = o.get("dph_total") if o.get("dph_total") is not None else o.get("dph_base")
+        try:
+            dph_f = float(dph) if dph is not None else None
+        except (TypeError, ValueError):
+            dph_f = None
+        if dph_f is None or dph_f >= max_dph:
+            continue
+        dlperf = o.get("dlperf") or o.get("dlperf_per_dphtotal") or 0
+        try:
+            dlperf_f = float(dlperf)
+        except (TypeError, ValueError):
+            dlperf_f = 0.0
         out.append(
             {
                 "id": o.get("id") or o.get("ask_id"),
                 "gpu_name": o.get("gpu_name") or o.get("gpu_name_raw"),
                 "num_gpus": o.get("num_gpus") or 1,
                 "gpu_ram_gb": round((o.get("gpu_ram") or 0) / 1024, 1),
-                "dph_total": o.get("dph_total") or o.get("dph_base"),
+                "dph_total": dph_f,
+                "dlperf": dlperf_f,
                 "reliability": o.get("reliability2") or o.get("reliability"),
                 "geolocation": o.get("geolocation") or o.get("country"),
             }
         )
-    return [x for x in out if x.get("id") is not None]
+
+    out = [x for x in out if x.get("id") is not None]
+    out.sort(key=lambda x: (-float(x.get("dlperf") or 0), float(x.get("dph_total") or 99)))
+    return out[:limit]
 
 
 def get_account_spend() -> dict[str, Any]:

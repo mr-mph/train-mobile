@@ -4,7 +4,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -15,10 +17,10 @@ import { useApi } from "@/contexts/ApiContext";
 interface VastOffer {
   id: number | string;
   gpu_name?: string;
+  num_gpus?: number;
   gpu_ram_gb?: number;
   dph_total?: number;
-  reliability?: number;
-  geolocation?: string;
+  dlperf?: number;
 }
 
 interface TargetCardProps extends ConfigComponentProps {
@@ -35,6 +37,13 @@ const formatHourly = (unitCostUsd: number, unitLabel: string): string => {
 const formatFlavorLine = (f: RunnerFlavor): string => {
   const accel = f.accelerator ? f.accelerator : f.cpu;
   return `${f.pretty_name} · ${accel} · ${formatHourly(f.unit_cost_usd, f.unit_label)}`;
+};
+
+const formatVastLine = (o: VastOffer): string => {
+  const gpus = o.num_gpus && o.num_gpus > 1 ? `${o.num_gpus}× ` : "";
+  const name = o.gpu_name || "GPU";
+  const price = `$${Number(o.dph_total || 0).toFixed(2)}/hr`;
+  return `${gpus}${name} · ${price}`;
 };
 
 const TargetCard: React.FC<TargetCardProps> = ({
@@ -116,26 +125,41 @@ const TargetCard: React.FC<TargetCardProps> = ({
               />
             </SelectTrigger>
             <SelectContent className="bg-black border-zinc-800 text-white max-h-80">
-              <SelectItem value="local">Local — your machine</SelectItem>
-              {offers.map((o) => (
-                <SelectItem key={String(o.id)} value={`vast:${o.id}`}>
-                  Vast · {o.gpu_name || "GPU"} · {o.gpu_ram_gb ?? "?"}GB · $
-                  {Number(o.dph_total || 0).toFixed(3)}/hr
-                </SelectItem>
-              ))}
-              {flavors.map((f) => (
-                <SelectItem
-                  key={f.name}
-                  value={`hf:${f.name}`}
-                  disabled={!authenticated}
-                >
-                  HF · {formatFlavorLine(f)}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectItem value="local">Local — your machine</SelectItem>
+              </SelectGroup>
+              {offers.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500">
+                    Vast · under $3/hr · best perf first
+                  </SelectLabel>
+                  {offers.map((o) => (
+                    <SelectItem key={String(o.id)} value={`vast:${o.id}`}>
+                      {formatVastLine(o)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+              {flavors.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500">
+                    Hugging Face Jobs
+                  </SelectLabel>
+                  {flavors.map((f) => (
+                    <SelectItem
+                      key={f.name}
+                      value={`hf:${f.name}`}
+                      disabled={!authenticated}
+                    >
+                      HF · {formatFlavorLine(f)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
             </SelectContent>
           </Select>
           <p className="text-xs text-zinc-500 mt-1">
-            Vast streams loss directly to TrainMobile (no W&B required). Set
+            Vast options are under $3/hr, sorted by DL performance. Set
             VAST_API_KEY in .env.
           </p>
           {spend?.credit != null && (
