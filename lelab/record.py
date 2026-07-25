@@ -807,8 +807,8 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
             teleop.configure()
         logger.info("✅ Devices ready")
 
-        # Central frame path: every cam.read* publishes to FrameBroker →
-        # dataset gets the same ndarray; UI gets JPEG via CameraHub relay.
+        # Sidecar UI preview: peek camera buffers already filled by LeRobot's
+        # capture threads. Does not wrap reads or touch the control loop.
         from .frame_broker import frame_broker
 
         frame_broker.attach_robot(robot)

@@ -12,18 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Central camera frame broker.
+"""Central camera frame broker for UI preview during recording.
 
-Architecture:
-  - Robot cameras keep owning the USB devices (LeRobot OpenCV threads).
-  - Control loop reads via cam.read_latest() → frames go into the dataset.
-  - A dedicated preview pump thread also peeks those cameras and pushes
-    JPEGs to CameraHub for the phone UI.
+LeRobot's OpenCV cameras already run a background capture thread that keeps
+``latest_frame`` updated. The recording control loop reads that for the
+dataset via ``cam.read_latest()``.
 
-The preview pump is independent of record_loop. That matters because
-``dataset.add_frame`` (image encode/write) can block the control loop for
-hundreds of ms per tick — if UI frames were only published from that loop,
-the phone feed freezes the moment an episode starts.
+This broker does **not** wrap or re-enter those reads (that raced the control
+loop and contributed to bus timeouts when an episode started). Instead it:
+
+1. Peeks each camera's ``latest_frame`` under its ``frame_lock`` (no I/O)
+2. JPEG-encodes a downscaled copy on a dedicated thread
+3. Pushes into CameraHub's relay for the phone UI
+
+Dataset path stays exactly LeRobot's; UI is a non-invasive sidecar.
 """
 
 from __future__ import annotations
@@ -31,18 +33,17 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _PREVIEW_WIDTH = 320
 _PREVIEW_HEIGHT = 240
 _PREVIEW_QUALITY = 40
-_PREVIEW_FPS = 15.0
+_PREVIEW_FPS = 12.0
 
 
 def _camera_device_index(cam: Any) -> int | None:
-    """Best-effort OpenCV device index from a live camera or its config."""
     for attr in ("index", "camera_index", "index_or_path"):
         val = getattr(cam, attr, None)
         if isinstance(val, int) and val >= 0:
@@ -56,18 +57,24 @@ def _camera_device_index(cam: Any) -> int | None:
     return None
 
 
+def _peek_latest_frame(cam: Any) -> Any | None:
+    """Non-blocking peek of OpenCVCamera.latest_frame (no TimeoutError, no USB)."""
+    lock = getattr(cam, "frame_lock", None)
+    if lock is None:
+        return getattr(cam, "latest_frame", None)
+    with lock:
+        return getattr(cam, "latest_frame", None)
+
+
 class FrameBroker:
-    """Fan-out: dataset reads + independent UI preview pump."""
+    """Sidecar UI preview from cameras the recording session already owns."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._frames: dict[str, Any] = {}
         self._name_to_index: dict[str, int] = {}
-        # (cam, method_name, original_bound_method)
-        self._wrapped: list[tuple[Any, str, Any]] = []
-        # Preview pump uses originals so it never depends on the control loop.
-        # (name, index, original_read_latest)
-        self._preview_sources: list[tuple[str, int, Callable[..., Any]]] = []
+        # (name, index, cam)
+        self._sources: list[tuple[str, int, Any]] = []
         self._stop = threading.Event()
         self._preview_thread: threading.Thread | None = None
         self._attached = False
@@ -92,7 +99,6 @@ class FrameBroker:
         preview_height: int = _PREVIEW_HEIGHT,
         preview_quality: int = _PREVIEW_QUALITY,
     ) -> dict[str, int]:
-        """Attach to a connected robot: wrap reads + start UI preview pump."""
         from .camera_stream import camera_hub
 
         if self._attached:
@@ -100,7 +106,7 @@ class FrameBroker:
 
         cameras = getattr(robot, "cameras", None) or {}
         name_to_index: dict[str, int] = {}
-        preview_sources: list[tuple[str, int, Callable[..., Any]]] = []
+        sources: list[tuple[str, int, Any]] = []
 
         for name, cam in cameras.items():
             idx = _camera_device_index(cam)
@@ -108,15 +114,10 @@ class FrameBroker:
                 logger.warning("FrameBroker: skip camera %r — no device index", name)
                 continue
             name_to_index[name] = idx
-
-            orig_latest = getattr(cam, "read_latest", None)
-            if orig_latest is not None and callable(orig_latest):
-                preview_sources.append((name, idx, orig_latest))
-
-            self._wrap_camera(cam, name, idx)
+            sources.append((name, idx, cam))
 
         self._name_to_index = name_to_index
-        self._preview_sources = preview_sources
+        self._sources = sources
 
         if name_to_index:
             camera_hub.begin_relay(
@@ -133,7 +134,7 @@ class FrameBroker:
             )
             self._preview_thread.start()
             logger.info(
-                "FrameBroker attached cameras %s (preview pump @ %.0f fps)",
+                "FrameBroker attached cameras %s (peek preview @ %.0f fps)",
                 {n: i for n, i in name_to_index.items()},
                 _PREVIEW_FPS,
             )
@@ -151,14 +152,7 @@ class FrameBroker:
         if thread is not None and thread.is_alive():
             thread.join(timeout=2.0)
         self._preview_thread = None
-        self._preview_sources = []
-
-        for cam, method_name, original in self._wrapped:
-            try:
-                setattr(cam, method_name, original)
-            except Exception:
-                logger.debug("FrameBroker: failed to restore %s", method_name, exc_info=True)
-        self._wrapped.clear()
+        self._sources = []
 
         with self._lock:
             self._frames.clear()
@@ -168,62 +162,35 @@ class FrameBroker:
         self._attached = False
         logger.info("FrameBroker detached")
 
-    def publish(self, name: str, index: int, frame: Any) -> None:
-        """Store the latest raw frame (control-loop path). UI is pumped separately."""
-        if frame is None:
-            return
-        with self._lock:
-            self._frames[name] = frame
-
-    def _push_ui(self, index: int, frame: Any) -> None:
+    def _preview_loop(self) -> None:
         from .camera_stream import camera_hub
 
-        camera_hub.push_relay_frame(index, frame, rgb=True)
-
-    def _preview_loop(self) -> None:
-        """Peek cameras on a fixed cadence — never blocked by dataset.add_frame."""
         interval = 1.0 / _PREVIEW_FPS
         while not self._stop.is_set():
             t0 = time.monotonic()
-            for name, index, read_latest in self._preview_sources:
+            for name, index, cam in self._sources:
                 if self._stop.is_set():
                     break
                 try:
-                    # Generous max_age: we only need *a* recent frame for UI.
-                    frame = read_latest(max_age_ms=2000)
+                    frame = _peek_latest_frame(cam)
                 except Exception:
-                    # Timeout / not ready yet — skip this tick.
                     continue
                 if frame is None:
+                    continue
+                # Copy so JPEG encode can't race the camera writer thread.
+                try:
+                    frame = frame.copy()
+                except Exception:
                     continue
                 with self._lock:
                     self._frames[name] = frame
                 try:
-                    self._push_ui(index, frame)
+                    camera_hub.push_relay_frame(index, frame, rgb=True)
                 except Exception:
                     logger.debug("FrameBroker: UI push failed for %s", name, exc_info=True)
 
             elapsed = time.monotonic() - t0
             self._stop.wait(timeout=max(0.0, interval - elapsed))
 
-    def _wrap_camera(self, cam: Any, name: str, index: int) -> None:
-        """Ensure control-loop reads also update the shared latest-frame store."""
-        for method_name in ("read_latest", "read"):
-            original = getattr(cam, method_name, None)
-            if original is None or not callable(original):
-                continue
 
-            def make_wrapper(orig: Any, cam_name: str, cam_index: int):
-                def wrapped(*args: Any, **kwargs: Any):
-                    frame = orig(*args, **kwargs)
-                    self.publish(cam_name, cam_index, frame)
-                    return frame
-
-                return wrapped
-
-            setattr(cam, method_name, make_wrapper(original, name, index))
-            self._wrapped.append((cam, method_name, original))
-
-
-# Process-wide singleton — recording attaches while it owns the devices.
 frame_broker = FrameBroker()
