@@ -462,8 +462,10 @@ const Landing = () => {
             <div className="space-y-3 max-w-xl">
               <h2 className="text-xl font-semibold">Training</h2>
               <p className="text-sm text-zinc-400">
-                Train a policy on a recorded dataset (local Mac or Vast.ai GPU
-                under $3/hr). Watch loss here — no W&amp;B required for Vast.
+                Train a policy on a recorded dataset — locally, on{" "}
+                <span className="text-zinc-300">Hugging Face Jobs</span> (priced
+                GPU flavors), or optionally Vast.ai. Watch loss on the job card;
+                roll out from a checkpoint while cloud training continues.
               </p>
               <Button
                 className="bg-green-500 hover:bg-green-600 text-black font-medium"

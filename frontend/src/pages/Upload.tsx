@@ -280,12 +280,19 @@ const Upload = () => {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <Button
-              onClick={() => navigate("/")}
+              onClick={() =>
+                navigate(
+                  `/edit-dataset?repo=${encodeURIComponent(
+                    datasetInfo.dataset_repo_id,
+                  )}&next=upload`,
+                  { state: { datasetInfo } },
+                )
+              }
               variant="outline"
               className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Home
+              Back to review
             </Button>
             <Button
               onClick={() => setShowDeleteConfirm(true)}

@@ -227,12 +227,15 @@ export interface RunnerHardwareResponse {
   authenticated: boolean;
   username: string | null;
   flavors: RunnerFlavor[];
+  /** Set when the hardware catalog request failed for a non-auth reason. */
+  error?: string | null;
 }
 
 const EMPTY_HARDWARE: RunnerHardwareResponse = {
   authenticated: false,
   username: null,
   flavors: [],
+  error: null,
 };
 
 export async function listRunnerHardware(
@@ -240,17 +243,26 @@ export async function listRunnerHardware(
   fetcher: Fetcher,
   signal?: AbortSignal,
 ): Promise<RunnerHardwareResponse> {
-  // Backend returns 401/403 for unauthenticated users; surface as "no flavors"
-  // rather than throwing so the UI can render the "log in to use cloud" hint.
+  // 401/403 → unauthenticated empty list so the UI can show a login hint.
+  // Other failures → authenticated-unknown with error message for Refresh.
   try {
-    return await apiRequest<RunnerHardwareResponse>(
+    const data = await apiRequest<RunnerHardwareResponse>(
       baseUrl,
       fetcher,
       "/jobs/runners/hardware",
       { signal, action: "List runner hardware" },
     );
+    return { ...data, error: null };
   } catch (e) {
-    if (e instanceof ApiError) return EMPTY_HARDWARE;
+    if (e instanceof ApiError) {
+      if (e.status === 401 || e.status === 403) return EMPTY_HARDWARE;
+      return {
+        authenticated: true,
+        username: null,
+        flavors: [],
+        error: e.message || `Hardware list failed (${e.status})`,
+      };
+    }
     throw e;
   }
 }

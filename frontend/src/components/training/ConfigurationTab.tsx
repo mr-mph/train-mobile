@@ -12,6 +12,8 @@ interface ConfigurationTabProps extends ConfigComponentProps {
   authenticated: boolean;
   flavors: RunnerFlavor[];
   hardwareLoading: boolean;
+  hardwareError?: string | null;
+  onRetryHardware?: () => void;
 }
 
 const ConfigurationTab: React.FC<ConfigurationTabProps> = ({
@@ -22,6 +24,8 @@ const ConfigurationTab: React.FC<ConfigurationTabProps> = ({
   authenticated,
   flavors,
   hardwareLoading,
+  hardwareError = null,
+  onRetryHardware,
 }) => {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -31,6 +35,8 @@ const ConfigurationTab: React.FC<ConfigurationTabProps> = ({
         authenticated={authenticated}
         flavors={flavors}
         loading={hardwareLoading}
+        hardwareError={hardwareError}
+        onRetryHardware={onRetryHardware}
       />
       <EssentialsCard
         config={config}

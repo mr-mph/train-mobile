@@ -94,17 +94,24 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
     return () => window.clearInterval(id);
   }, [isProvisioning, isStarting, job.started_at]);
 
+  const isCloudRunner =
+    job.runner === "hf_cloud" || job.runner === "vast";
+  const canRollOutWhileTraining =
+    isRunning && isCloudRunner && job.checkpoint_count > 0 && !isProvisioning;
+
   const subtitle = isImported
     ? importedSource
     : isProvisioning
       ? `${job.status_message} · ${formatElapsed(elapsedSec)}`
-      : isStarting
-        ? `starting… · ${formatElapsed(elapsedSec)}`
-        : isRunning
-          ? `started ${relativeTime(job.started_at)}`
-          : job.ended_at != null
-            ? `ended ${relativeTime(job.ended_at)}`
-            : present.label.toLowerCase();
+      : canRollOutWhileTraining
+        ? "Training continues · roll out from latest checkpoint"
+        : isStarting
+          ? `starting… · ${formatElapsed(elapsedSec)}`
+          : isRunning
+            ? `started ${relativeTime(job.started_at)}`
+            : job.ended_at != null
+              ? `ended ${relativeTime(job.ended_at)}`
+              : present.label.toLowerCase();
 
   const [checkpoints, setCheckpoints] = useState<JobCheckpoint[]>([]);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);

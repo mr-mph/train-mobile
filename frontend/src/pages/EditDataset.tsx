@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Trash2,
   Scissors,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApi } from "@/contexts/ApiContext";
@@ -31,10 +32,24 @@ type TimeseriesPoint = {
   state?: number[];
 };
 
+type DatasetInfoState = {
+  dataset_repo_id: string;
+  single_task: string;
+  num_episodes: number;
+  saved_episodes?: number;
+  session_elapsed_seconds?: number;
+};
+
 const EditDataset = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [params] = useSearchParams();
   const repoId = params.get("repo") || "";
+  const nextStep = params.get("next");
+  const goToUploadNext = nextStep === "upload";
+  const incomingDatasetInfo = (
+    location.state as { datasetInfo?: DatasetInfoState } | null
+  )?.datasetInfo;
   const { baseUrl, fetchWithHeaders } = useApi();
   const { toast } = useToast();
 
@@ -180,6 +195,26 @@ const EditDataset = () => {
     await reloadMeta();
   };
 
+  const buildDatasetInfo = (): DatasetInfoState => {
+    const n = meta?.episodes.length ?? incomingDatasetInfo?.num_episodes ?? 0;
+    return {
+      dataset_repo_id: repoId,
+      single_task: incomingDatasetInfo?.single_task ?? "",
+      num_episodes: n,
+      saved_episodes: n,
+      session_elapsed_seconds:
+        incomingDatasetInfo?.session_elapsed_seconds ?? 0,
+    };
+  };
+
+  const continueToUpload = () => {
+    navigate("/upload", { state: { datasetInfo: buildDatasetInfo() } });
+  };
+
+  const leaveReview = () => {
+    navigate(goToUploadNext ? "/?tab=record" : "/");
+  };
+
   if (!repoId) {
     return (
       <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4 gap-4">
@@ -201,18 +236,28 @@ const EditDataset = () => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => navigate("/")}
+          onClick={leaveReview}
           className="text-white"
         >
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="font-semibold truncate">Dataset</h1>
+          <h1 className="font-semibold truncate">
+            {goToUploadNext ? "Review episodes" : "Dataset"}
+          </h1>
           <p className="text-xs text-gray-400 truncate">{repoId}</p>
         </div>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-lg mx-auto w-full">
+        {goToUploadNext && (
+          <p className="text-sm text-zinc-400">
+            Review and soft-trim or remove bad episodes before uploading.
+            Trims/deletes are for local review — Hub upload still uses the full
+            on-disk dataset for now.
+          </p>
+        )}
+
         {meta && (
           <div className="flex items-center justify-between gap-2">
             <Button
@@ -326,6 +371,25 @@ const EditDataset = () => {
         >
           <Trash2 className="w-4 h-4 mr-2" /> Remove episode
         </Button>
+
+        {goToUploadNext ? (
+          <div className="space-y-2 pt-2 border-t border-zinc-800">
+            <Button
+              onClick={continueToUpload}
+              className="w-full h-12 bg-green-500 hover:bg-green-600 text-black font-semibold"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Continue to upload
+            </Button>
+            <Button
+              variant="outline"
+              onClick={leaveReview}
+              className="w-full h-11 border-zinc-700"
+            >
+              Done without uploading
+            </Button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -131,6 +131,15 @@ const JobsSection: React.FC = () => {
   };
 
   const handlePlay = (job: JobRecord, step: number) => {
+    const localTrainingBusy = jobs.some(
+      (j) => j.runner === "local" && j.state === "running",
+    );
+    if (localTrainingBusy) {
+      const ok = window.confirm(
+        "Local training is using the GPU — roll out anyway? This may slow or stall training.",
+      );
+      if (!ok) return;
+    }
     setInferenceJob(job);
     setInferenceStep(step);
     setInferenceModalOpen(true);

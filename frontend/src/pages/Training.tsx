@@ -141,6 +141,8 @@ const ConfigurationMode: React.FC = () => {
   const [authenticated, setAuthenticated] = useState<boolean>(false);
   const [flavors, setFlavors] = useState<RunnerFlavor[]>([]);
   const [hardwareLoading, setHardwareLoading] = useState(true);
+  const [hardwareError, setHardwareError] = useState<string | null>(null);
+  const [hardwareTick, setHardwareTick] = useState(0);
 
   useEffect(() => {
     setDatasetsLoading(true);
@@ -181,13 +183,15 @@ const ConfigurationMode: React.FC = () => {
       .then((data) => {
         setAuthenticated(data.authenticated);
         setFlavors(data.flavors);
+        setHardwareError(data.error ?? null);
       })
-      .catch(() => {
+      .catch((e) => {
         setAuthenticated(false);
         setFlavors([]);
+        setHardwareError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => setHardwareLoading(false));
-  }, [baseUrl, fetchWithHeaders, auth.status]);
+  }, [baseUrl, fetchWithHeaders, auth.status, hardwareTick]);
 
   const updateConfig = <T extends keyof TrainingConfig>(key: T, value: TrainingConfig[T]) => {
     setTrainingConfig((prev) => ({ ...prev, [key]: value }));
@@ -316,6 +320,8 @@ const ConfigurationMode: React.FC = () => {
           authenticated={authenticated}
           flavors={flavors}
           hardwareLoading={hardwareLoading}
+          hardwareError={hardwareError}
+          onRetryHardware={() => setHardwareTick((t) => t + 1)}
         />
         <div className="max-w-3xl mx-auto mt-6 flex justify-end">
           {(() => {
@@ -701,27 +707,47 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
           getProgressPercentage={getProgressPercentage}
           formatTime={formatTime}
         />
-        <div className="bg-black border border-zinc-800 rounded-lg p-4 flex items-center gap-3">
-          <span className="text-sm font-semibold text-zinc-300">Run rollout</span>
-          {checkpoints.length === 0 ? (
-            <span className="text-xs text-zinc-500">No checkpoints yet — wait for the first save.</span>
-          ) : (
-            <>
-              <CheckpointDropdown
-                checkpoints={checkpoints}
-                selectedStep={selectedStep}
-                onChange={setSelectedStep}
-              />
-              <Button
-                onClick={() => setInferenceModalOpen(true)}
-                disabled={selectedStep == null}
-                className="bg-green-500 hover:bg-green-600 text-white"
-              >
-                <Play className="w-4 h-4 mr-2" />
-                Run on robot
-              </Button>
-            </>
-          )}
+        <div className="bg-black border border-zinc-800 rounded-lg p-4 space-y-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm font-semibold text-zinc-300">Run rollout</span>
+            {checkpoints.length === 0 ? (
+              <span className="text-xs text-zinc-500">
+                No checkpoints yet — wait for the first save.
+              </span>
+            ) : (
+              <>
+                <CheckpointDropdown
+                  checkpoints={checkpoints}
+                  selectedStep={selectedStep}
+                  onChange={setSelectedStep}
+                />
+                <Button
+                  onClick={() => {
+                    if (job.runner === "local" && isRunning) {
+                      const ok = window.confirm(
+                        "Local training is using the GPU — roll out anyway? This may slow or stall training.",
+                      );
+                      if (!ok) return;
+                    }
+                    setInferenceModalOpen(true);
+                  }}
+                  disabled={selectedStep == null}
+                  className="bg-green-500 hover:bg-green-600 text-white"
+                >
+                  <Play className="w-4 h-4 mr-2" />
+                  Run on robot
+                </Button>
+              </>
+            )}
+          </div>
+          {isRunning &&
+            (job.runner === "hf_cloud" || job.runner === "vast") &&
+            checkpoints.length > 0 && (
+              <p className="text-xs text-zinc-500">
+                Training continues on the cloud — roll out uses the selected
+                checkpoint without pausing the job.
+              </p>
+            )}
         </div>
         <InferenceModal
           open={inferenceModalOpen}

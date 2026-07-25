@@ -187,7 +187,11 @@ const Recording = () => {
             saved_episodes: status.saved_episodes || 0,
             session_elapsed_seconds: status.session_elapsed_seconds || 0,
           };
-          navigate("/upload", { state: { datasetInfo } });
+          const repoId = datasetInfo.dataset_repo_id;
+          navigate(
+            `/edit-dataset?repo=${encodeURIComponent(repoId)}&next=upload`,
+            { state: { datasetInfo } },
+          );
         }
       } catch (error) {
         console.error("Error polling recording status:", error);

@@ -29,6 +29,8 @@ interface TargetCardProps extends ConfigComponentProps {
   authenticated: boolean;
   flavors: RunnerFlavor[];
   loading: boolean;
+  hardwareError?: string | null;
+  onRetryHardware?: () => void;
 }
 
 const formatHourly = (unitCostUsd: number, unitLabel: string): string => {
@@ -54,6 +56,8 @@ const TargetCard: React.FC<TargetCardProps> = ({
   authenticated,
   flavors,
   loading,
+  hardwareError = null,
+  onRetryHardware,
 }) => {
   const { baseUrl, fetchWithHeaders } = useApi();
   const [offers, setOffers] = useState<VastOffer[]>([]);
@@ -61,6 +65,7 @@ const TargetCard: React.FC<TargetCardProps> = ({
   const [spend, setSpend] = useState<{ credit?: number } | null>(null);
   const targetRef = useRef(config.target);
   const updateConfigRef = useRef(updateConfig);
+  const didPreferHf = useRef(false);
   targetRef.current = config.target;
   updateConfigRef.current = updateConfig;
 
@@ -102,6 +107,22 @@ const TargetCard: React.FC<TargetCardProps> = ({
     void refreshVast();
   }, [refreshVast]);
 
+  // Once HF auth + flavors are available, prefer the first HF flavor when the
+  // user is still on the default local target (don't override an explicit pick).
+  useEffect(() => {
+    if (didPreferHf.current) return;
+    if (!authenticated || flavors.length === 0 || loading) return;
+    if (config.target.runner !== "local") {
+      didPreferHf.current = true;
+      return;
+    }
+    didPreferHf.current = true;
+    updateConfig("target", {
+      runner: "hf_cloud",
+      flavor: flavors[0].name,
+    });
+  }, [authenticated, flavors, loading, config.target.runner, updateConfig]);
+
   const target = config.target;
   const value =
     target.runner === "local"
@@ -139,15 +160,20 @@ const TargetCard: React.FC<TargetCardProps> = ({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => void refreshVast()}
-              disabled={vastLoading}
+              onClick={() => {
+                onRetryHardware?.();
+                void refreshVast();
+              }}
+              disabled={vastLoading || loading}
               className="h-7 px-2 text-zinc-400 hover:text-white hover:bg-zinc-900"
-              title="Refresh Vast GPU offers"
+              title="Refresh compute options"
             >
               <RefreshCw
-                className={`w-3.5 h-3.5 mr-1.5 ${vastLoading ? "animate-spin" : ""}`}
+                className={`w-3.5 h-3.5 mr-1.5 ${
+                  vastLoading || loading ? "animate-spin" : ""
+                }`}
               />
-              Refresh GPUs
+              Refresh
             </Button>
           </div>
           <Select value={value} onValueChange={handleChange}>
@@ -162,10 +188,40 @@ const TargetCard: React.FC<TargetCardProps> = ({
               <SelectGroup>
                 <SelectItem value="local">Local — your machine</SelectItem>
               </SelectGroup>
+
+              <SelectGroup>
+                <SelectLabel className="text-zinc-500">
+                  Hugging Face Jobs · priced by flavor
+                </SelectLabel>
+                {!authenticated ? (
+                  <SelectItem value="hf:__login__" disabled>
+                    Log in with Hugging Face to unlock Jobs
+                  </SelectItem>
+                ) : loading ? (
+                  <SelectItem value="hf:__loading__" disabled>
+                    Loading HF hardware…
+                  </SelectItem>
+                ) : hardwareError ? (
+                  <SelectItem value="hf:__error__" disabled>
+                    Couldn’t load HF hardware — tap Refresh
+                  </SelectItem>
+                ) : flavors.length === 0 ? (
+                  <SelectItem value="hf:__empty__" disabled>
+                    No HF hardware flavors returned
+                  </SelectItem>
+                ) : (
+                  flavors.map((f) => (
+                    <SelectItem key={f.name} value={`hf:${f.name}`}>
+                      HF · {formatFlavorLine(f)}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectGroup>
+
               {offers.length > 0 && (
                 <SelectGroup>
                   <SelectLabel className="text-zinc-500">
-                    Vast · under $3/hr · best perf first
+                    Vast · under $3/hr · may go stale
                   </SelectLabel>
                   {offers.map((o) => (
                     <SelectItem key={String(o.id)} value={`vast:${o.id}`}>
@@ -174,28 +230,21 @@ const TargetCard: React.FC<TargetCardProps> = ({
                   ))}
                 </SelectGroup>
               )}
-              {flavors.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel className="text-zinc-500">
-                    Hugging Face Jobs
-                  </SelectLabel>
-                  {flavors.map((f) => (
-                    <SelectItem
-                      key={f.name}
-                      value={`hf:${f.name}`}
-                      disabled={!authenticated}
-                    >
-                      HF · {formatFlavorLine(f)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
             </SelectContent>
           </Select>
           <p className="text-xs text-zinc-500 mt-1">
-            Vast offers go stale quickly — refresh before starting. Set
-            VAST_API_KEY in .env.
+            Prefer Hugging Face Jobs for reliable cloud GPUs with listed
+            pricing. Vast is optional (set VAST_API_KEY) and offers expire
+            quickly.
           </p>
+          {!authenticated && (
+            <p className="text-xs text-amber-400/90 mt-1">
+              Sign in with Hugging Face above to run cloud Jobs.
+            </p>
+          )}
+          {authenticated && hardwareError && (
+            <p className="text-xs text-red-400 mt-1">{hardwareError}</p>
+          )}
           {spend?.credit != null && (
             <p className="text-xs text-emerald-400 mt-1">
               Vast credit: ${Number(spend.credit).toFixed(2)}
