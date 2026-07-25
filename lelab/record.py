@@ -510,6 +510,7 @@ def handle_recording_status() -> dict[str, Any]:
         "recording_active": recording_active,
         "current_phase": current_phase,  # preparing | ready | recording | completed | error
         "paused": is_paused,
+        "preview_ready": False,
         "session_ended": session_ended,
         "available_controls": {
             "stop_recording": recording_active,
@@ -530,6 +531,15 @@ def handle_recording_status() -> dict[str, Any]:
             else "Recording status retrieved successfully"
         ),
     }
+
+    try:
+        from .frame_broker import frame_broker
+
+        status["preview_ready"] = bool(frame_broker.attached)
+        if frame_broker.attached:
+            status["preview_cameras"] = frame_broker.camera_names
+    except Exception:
+        pass
 
     # Always echo the stamped dataset id whenever a config exists, so the frontend
     # can read the actual on-disk repo_id (post stamp) for upload navigation.
@@ -807,8 +817,7 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
             teleop.configure()
         logger.info("✅ Devices ready")
 
-        # Sidecar UI preview: peek camera buffers already filled by LeRobot's
-        # capture threads. Does not wrap reads or touch the control loop.
+        # Sidecar UI preview: peek camera buffers → name-keyed /ws/recording-preview.
         from .frame_broker import frame_broker
 
         frame_broker.attach_robot(robot)

@@ -12,25 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Central camera frame broker for UI preview during recording.
+"""Recording-session camera preview broker.
 
-LeRobot's OpenCV cameras already run a background capture thread that keeps
-``latest_frame`` updated. The recording control loop reads that for the
-dataset via ``cam.read_latest()``.
+LeRobot owns the USB cameras. Its OpenCV capture threads keep ``latest_frame``
+updated. This broker:
 
-This broker does **not** wrap or re-enter those reads (that raced the control
-loop and contributed to bus timeouts when an episode started). Instead it:
+1. Peeks those buffers on a fixed cadence (no ``read_latest``, no wrapping)
+2. JPEG-encodes a small preview copy
+3. Stores name-keyed packets for ``/ws/recording-preview/{name}``
 
-1. Peeks each camera's ``latest_frame`` under its ``frame_lock`` (no I/O)
-2. JPEG-encodes a downscaled copy on a dedicated thread
-3. Pushes into CameraHub's relay for the phone UI
-
-Dataset path stays exactly LeRobot's; UI is a non-invasive sidecar.
+Teleop / calibration keep using ``CameraHub`` OpenCV workers. Recording UI
+must use this broker — never ``/ws/cameras/{index}`` — so it cannot pin a
+dead OpenCV worker across ``begin_relay`` / device handoff.
 """
 
 from __future__ import annotations
 
 import logging
+import struct
 import threading
 import time
 from typing import Any
@@ -41,6 +40,7 @@ _PREVIEW_WIDTH = 320
 _PREVIEW_HEIGHT = 240
 _PREVIEW_QUALITY = 40
 _PREVIEW_FPS = 12.0
+_WS_AGE_STRUCT = struct.Struct(">I")
 
 
 def _camera_device_index(cam: Any) -> int | None:
@@ -58,7 +58,6 @@ def _camera_device_index(cam: Any) -> int | None:
 
 
 def _peek_latest_frame(cam: Any) -> Any | None:
-    """Non-blocking peek of OpenCVCamera.latest_frame (no TimeoutError, no USB)."""
     lock = getattr(cam, "frame_lock", None)
     if lock is None:
         return getattr(cam, "latest_frame", None)
@@ -66,30 +65,69 @@ def _peek_latest_frame(cam: Any) -> Any | None:
         return getattr(cam, "latest_frame", None)
 
 
+class _NamedSlot:
+    """Latest JPEG for one named camera (UI consumers wait on this)."""
+
+    def __init__(self, name: str, index: int) -> None:
+        self.name = name
+        self.index = index
+        self._cond = threading.Condition()
+        self._jpeg: bytes | None = None
+        self._captured_at: float | None = None
+        self._seq = 0
+
+    def publish(self, jpeg: bytes) -> None:
+        now = time.monotonic()
+        with self._cond:
+            self._jpeg = jpeg
+            self._captured_at = now
+            self._seq += 1
+            self._cond.notify_all()
+
+    def wait_next(self, after_seq: int, timeout: float) -> tuple[bytes | None, int, int]:
+        deadline = time.monotonic() + timeout
+        with self._cond:
+            while self._seq <= after_seq:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._cond.wait(timeout=remaining)
+            age_ms = 0
+            if self._jpeg is not None and self._captured_at is not None:
+                age_ms = max(0, int((time.monotonic() - self._captured_at) * 1000))
+            return self._jpeg, self._seq, age_ms
+
+    def latest(self) -> tuple[bytes | None, int, int]:
+        with self._cond:
+            age_ms = 0
+            if self._jpeg is not None and self._captured_at is not None:
+                age_ms = max(0, int((time.monotonic() - self._captured_at) * 1000))
+            return self._jpeg, self._seq, age_ms
+
+
 class FrameBroker:
-    """Sidecar UI preview from cameras the recording session already owns."""
+    """Sidecar UI preview for an active recording session."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._frames: dict[str, Any] = {}
-        self._name_to_index: dict[str, int] = {}
-        # (name, index, cam)
+        self._slots: dict[str, _NamedSlot] = {}
         self._sources: list[tuple[str, int, Any]] = []
         self._stop = threading.Event()
         self._preview_thread: threading.Thread | None = None
         self._attached = False
+        self._encode_params: list[int] | None = None
+        self._width = _PREVIEW_WIDTH
+        self._height = _PREVIEW_HEIGHT
+        self._quality = _PREVIEW_QUALITY
 
     @property
     def attached(self) -> bool:
         return self._attached
 
     @property
-    def name_to_index(self) -> dict[str, int]:
-        return dict(self._name_to_index)
-
-    def latest(self, name: str) -> Any | None:
+    def camera_names(self) -> list[str]:
         with self._lock:
-            return self._frames.get(name)
+            return list(self._slots.keys())
 
     def attach_robot(
         self,
@@ -99,14 +137,17 @@ class FrameBroker:
         preview_height: int = _PREVIEW_HEIGHT,
         preview_quality: int = _PREVIEW_QUALITY,
     ) -> dict[str, int]:
-        from .camera_stream import camera_hub
-
         if self._attached:
             self.detach()
 
+        self._width = preview_width
+        self._height = preview_height
+        self._quality = max(20, min(int(preview_quality), 85))
+
         cameras = getattr(robot, "cameras", None) or {}
-        name_to_index: dict[str, int] = {}
         sources: list[tuple[str, int, Any]] = []
+        slots: dict[str, _NamedSlot] = {}
+        name_to_index: dict[str, int] = {}
 
         for name, cam in cameras.items():
             idx = _camera_device_index(cam)
@@ -114,18 +155,14 @@ class FrameBroker:
                 logger.warning("FrameBroker: skip camera %r — no device index", name)
                 continue
             name_to_index[name] = idx
+            slots[name] = _NamedSlot(name, idx)
             sources.append((name, idx, cam))
 
-        self._name_to_index = name_to_index
-        self._sources = sources
+        with self._lock:
+            self._slots = slots
+            self._sources = sources
 
-        if name_to_index:
-            camera_hub.begin_relay(
-                list(name_to_index.values()),
-                width=preview_width,
-                height=preview_height,
-                quality=preview_quality,
-            )
+        if slots:
             self._stop.clear()
             self._preview_thread = threading.Thread(
                 target=self._preview_loop,
@@ -134,8 +171,8 @@ class FrameBroker:
             )
             self._preview_thread.start()
             logger.info(
-                "FrameBroker attached cameras %s (peek preview @ %.0f fps)",
-                {n: i for n, i in name_to_index.items()},
+                "FrameBroker attached %s (peek @ %.0f fps → /ws/recording-preview)",
+                name_to_index,
                 _PREVIEW_FPS,
             )
         else:
@@ -145,30 +182,66 @@ class FrameBroker:
         return name_to_index
 
     def detach(self) -> None:
-        from .camera_stream import camera_hub
-
         self._stop.set()
         thread = self._preview_thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=2.0)
         self._preview_thread = None
-        self._sources = []
-
         with self._lock:
-            self._frames.clear()
-            self._name_to_index.clear()
-
-        camera_hub.end_relay()
+            self._sources = []
+            self._slots.clear()
         self._attached = False
         logger.info("FrameBroker detached")
 
-    def _preview_loop(self) -> None:
-        from .camera_stream import camera_hub
+    def wait_next_jpeg(
+        self, name: str, after_seq: int, timeout: float
+    ) -> tuple[bytes | None, int, int]:
+        with self._lock:
+            slot = self._slots.get(name)
+        if slot is None:
+            return None, after_seq, 0
+        return slot.wait_next(after_seq, timeout)
 
+    def latest_jpeg(self, name: str) -> tuple[bytes | None, int, int]:
+        with self._lock:
+            slot = self._slots.get(name)
+        if slot is None:
+            return None, 0, 0
+        return slot.latest()
+
+    @staticmethod
+    def pack_ws_frame(jpeg: bytes, age_ms: int) -> bytes:
+        return _WS_AGE_STRUCT.pack(max(0, min(age_ms, 0xFFFFFFFF))) + jpeg
+
+    def _encode(self, frame: Any) -> bytes | None:
+        import cv2
+        import numpy as np
+
+        arr = np.asarray(frame)
+        if arr.ndim != 3 or arr.shape[2] not in (3, 4):
+            return None
+        if arr.shape[2] == 4:
+            arr = arr[:, :, :3]
+        # LeRobot OpenCV cameras default to RGB; JPEG encode needs BGR.
+        arr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        h, w = arr.shape[:2]
+        if w != self._width or h != self._height:
+            arr = cv2.resize(arr, (self._width, self._height), interpolation=cv2.INTER_AREA)
+        if self._encode_params is None:
+            self._encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self._quality]
+        ok, buf = cv2.imencode(".jpg", arr, self._encode_params)
+        if not ok:
+            return None
+        return buf.tobytes()
+
+    def _preview_loop(self) -> None:
         interval = 1.0 / _PREVIEW_FPS
         while not self._stop.is_set():
             t0 = time.monotonic()
-            for name, index, cam in self._sources:
+            with self._lock:
+                sources = list(self._sources)
+                slots = dict(self._slots)
+            for name, _index, cam in sources:
                 if self._stop.is_set():
                     break
                 try:
@@ -177,17 +250,16 @@ class FrameBroker:
                     continue
                 if frame is None:
                     continue
-                # Copy so JPEG encode can't race the camera writer thread.
                 try:
                     frame = frame.copy()
                 except Exception:
                     continue
-                with self._lock:
-                    self._frames[name] = frame
-                try:
-                    camera_hub.push_relay_frame(index, frame, rgb=True)
-                except Exception:
-                    logger.debug("FrameBroker: UI push failed for %s", name, exc_info=True)
+                jpeg = self._encode(frame)
+                if jpeg is None:
+                    continue
+                slot = slots.get(name)
+                if slot is not None:
+                    slot.publish(jpeg)
 
             elapsed = time.monotonic() - t0
             self._stop.wait(timeout=max(0.0, interval - elapsed))

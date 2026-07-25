@@ -18,9 +18,7 @@ import {
   playResetStartCue,
 } from "@/lib/recordingAudio";
 import { useApi } from "@/contexts/ApiContext";
-import TeleopCameraPanel, {
-  type CameraFeedSpec,
-} from "@/components/control/TeleopCameraPanel";
+import RecordingCameraFeed from "@/components/control/RecordingCameraFeed";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,6 +54,8 @@ interface BackendStatus {
   recording_active: boolean;
   current_phase: string;
   paused?: boolean;
+  preview_ready?: boolean;
+  preview_cameras?: string[];
   current_episode?: number;
   total_episodes?: number | null;
   saved_episodes?: number;
@@ -386,15 +386,11 @@ const Recording = () => {
     await handleStopRecording();
   }, [handleStopRecording]);
 
-  const cameraFeeds: CameraFeedSpec[] = useMemo(() => {
-    const cams = recordingConfig?.cameras ?? {};
-    return Object.entries(cams).map(([name, cfg]) => ({
-      key: name,
-      name,
-      cameraIndex:
-        typeof cfg.camera_index === "number" ? cfg.camera_index : undefined,
-    }));
-  }, [recordingConfig?.cameras]);
+  const cameraNames = useMemo(() => {
+    const fromStatus = backendStatus?.preview_cameras;
+    if (fromStatus && fromStatus.length > 0) return fromStatus;
+    return Object.keys(recordingConfig?.cameras ?? {});
+  }, [backendStatus?.preview_cameras, recordingConfig?.cameras]);
 
   if (!recordingConfig) {
     return (
@@ -487,6 +483,8 @@ const Recording = () => {
       ? (controls.resume_episode ?? true)
       : (controls.pause_episode ?? false));
 
+  const previewReady = Boolean(backendStatus.preview_ready);
+
   return (
     <div
       className="min-h-screen bg-black text-white flex flex-col"
@@ -551,7 +549,25 @@ const Recording = () => {
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4 overflow-y-auto pb-36">
-        <TeleopCameraPanel cameras={cameraFeeds} hideHeader />
+        <div className="w-full max-w-3xl mx-auto">
+          {cameraNames.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {cameraNames.map((name) => (
+                <RecordingCameraFeed
+                  key={name}
+                  cameraName={name}
+                  label={name}
+                  enabled={previewReady}
+                  className="rounded-lg border border-zinc-800"
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 text-center py-12">
+              No cameras configured for this session.
+            </p>
+          )}
+        </div>
       </main>
 
       <div

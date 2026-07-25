@@ -525,7 +525,9 @@ async def websocket_camera_stream(
 ):
     """Push JPEG previews over WebSocket (4-byte age_ms + jpeg).
 
-    Much smoother than HTTP polling: one connection, server pushes each new frame.
+    Only sends when the frame sequence advances (never rebroadcasts a stale
+    JPEG). If the underlying capture is stopped (``stop_all`` / relay handoff),
+    the socket closes so the client reconnects to the new source.
     """
     if camera_index < 0:
         await websocket.close(code=1008)
@@ -542,7 +544,6 @@ async def websocket_camera_stream(
         worker = camera_hub.open_stream(
             camera_index, width=width, height=height, fps=fps, quality=quality
         )
-        # Wait for first frame before entering the push loop.
         first = await asyncio.to_thread(worker.wait_jpeg, 8.0)
         if first is None and worker.error():
             await websocket.close(code=1011)
@@ -551,13 +552,14 @@ async def websocket_camera_stream(
         seq = 0
         frame_timeout = max(0.2, 2.0 / fps)
         while True:
-            jpeg, seq, age_ms = await asyncio.to_thread(
+            jpeg, new_seq, age_ms = await asyncio.to_thread(
                 worker.wait_next_jpeg, seq, frame_timeout
             )
-            if jpeg is None:
-                if worker.error() and worker.latest_jpeg() is None:
-                    break
-                # Keepalive / wait for next frame
+            # Capture was torn down (preview/stop, begin_relay, etc.).
+            stopped = getattr(getattr(worker, "_stop", None), "is_set", lambda: False)()
+            if stopped or (worker.error() and worker.latest_jpeg() is None):
+                break
+            if jpeg is None or new_seq <= seq:
                 try:
                     await asyncio.wait_for(websocket.receive_text(), timeout=0.001)
                 except (TimeoutError, asyncio.TimeoutError):
@@ -565,6 +567,7 @@ async def websocket_camera_stream(
                 except WebSocketDisconnect:
                     break
                 continue
+            seq = new_seq
             worker.touch()
             try:
                 await websocket.send_bytes(camera_hub.pack_ws_frame(jpeg, age_ms))
@@ -580,6 +583,73 @@ async def websocket_camera_stream(
         with contextlib.suppress(Exception):
             await websocket.close()
 
+
+@app.websocket("/ws/recording-preview/{camera_name}")
+async def websocket_recording_preview(websocket: WebSocket, camera_name: str):
+    """Live preview during an active recording session (name-keyed FrameBroker).
+
+    Do not use ``/ws/cameras/{index}`` while recording — that path opens a second
+    OpenCV capture and races the session that owns the device.
+    """
+    from .frame_broker import frame_broker
+
+    await websocket.accept()
+    try:
+        # Wait briefly for attach (status can flip ready a tick before WS opens).
+        attach_deadline = time.monotonic() + 15.0
+        while not frame_broker.attached and time.monotonic() < attach_deadline:
+            await asyncio.sleep(0.1)
+        if not frame_broker.attached:
+            await websocket.close(code=1013)  # Try again later
+            return
+
+        if camera_name not in frame_broker.camera_names:
+            await websocket.close(code=1008)
+            return
+
+        seq = 0
+        # Wait for first real frame.
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            jpeg, seq, age_ms = await asyncio.to_thread(
+                frame_broker.wait_next_jpeg, camera_name, 0, 0.5
+            )
+            if jpeg is not None and seq > 0:
+                await websocket.send_bytes(frame_broker.pack_ws_frame(jpeg, age_ms))
+                break
+            if not frame_broker.attached:
+                await websocket.close(code=1011)
+                return
+        else:
+            await websocket.close(code=1011)
+            return
+
+        while frame_broker.attached:
+            jpeg, new_seq, age_ms = await asyncio.to_thread(
+                frame_broker.wait_next_jpeg, camera_name, seq, 0.5
+            )
+            if not frame_broker.attached:
+                break
+            if jpeg is None or new_seq <= seq:
+                try:
+                    await asyncio.wait_for(websocket.receive_text(), timeout=0.001)
+                except (TimeoutError, asyncio.TimeoutError):
+                    pass
+                except WebSocketDisconnect:
+                    break
+                continue
+            seq = new_seq
+            try:
+                await websocket.send_bytes(frame_broker.pack_ws_frame(jpeg, age_ms))
+            except (WebSocketDisconnect, RuntimeError):
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.error("Recording preview WS failed for %s: %s", camera_name, exc)
+    finally:
+        with contextlib.suppress(Exception):
+            await websocket.close()
 
 @app.post("/cameras/preview/stop")
 def stop_camera_previews():
