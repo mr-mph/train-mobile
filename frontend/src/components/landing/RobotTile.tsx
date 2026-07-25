@@ -27,6 +27,8 @@ interface RobotTileProps {
   onConfigure: (name: string) => void;
   onTeleop: (robot: RobotRecord) => void;
   onDelete: (name: string) => void;
+  /** When false, hide the big Teleoperation button (other tabs still need the robot picker). */
+  showTeleopButton?: boolean;
 }
 
 const RobotTile: React.FC<RobotTileProps> = ({
@@ -39,6 +41,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
   onConfigure,
   onTeleop,
   onDelete,
+  showTeleopButton = true,
 }) => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const status = robot ? (robot.is_clean ? "Ready" : "Needs configuration") : null;
@@ -99,7 +102,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
         )}
       </div>
 
-      {robot && (
+      {robot && showTeleopButton && (
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="w-full">
@@ -112,7 +115,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
                     : "bg-green-500 hover:bg-green-600 text-white"
                 }`}
               >
-                Teleoperation
+                Start teleoperation
               </Button>
             </div>
           </TooltipTrigger>

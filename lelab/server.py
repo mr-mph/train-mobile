@@ -441,8 +441,8 @@ def stream_camera_mjpeg(
     camera_index: int,
     width: int = 320,
     height: int = 240,
-    fps: float = 10,
-    quality: int = 45,
+    fps: float = 15,
+    quality: int = 40,
 ):
     """Multipart MJPEG preview of a host OpenCV camera (for remote / phone UIs)."""
     if camera_index < 0:
@@ -482,10 +482,10 @@ def camera_frame_jpeg(
     camera_index: int,
     width: int = 320,
     height: int = 240,
-    fps: float = 10,
-    quality: int = 45,
+    fps: float = 15,
+    quality: int = 40,
 ):
-    """Single latest JPEG — preferred for low-latency phone previews (poll this)."""
+    """Single latest JPEG — fallback for clients that cannot use the WS stream."""
     if camera_index < 0:
         raise HTTPException(status_code=400, detail="camera_index must be >= 0")
     width = max(160, min(width, 1280))
@@ -494,7 +494,7 @@ def camera_frame_jpeg(
     quality = max(20, min(int(quality), 85))
 
     try:
-        jpeg = camera_hub.get_jpeg(
+        jpeg, age_ms = camera_hub.get_jpeg(
             camera_index, width=width, height=height, fps=fps, quality=quality
         )
     except Exception as exc:
@@ -507,8 +507,76 @@ def camera_frame_jpeg(
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
+            "X-Frame-Age-Ms": str(age_ms),
         },
     )
+
+
+@app.websocket("/ws/cameras/{camera_index}")
+async def websocket_camera_stream(
+    websocket: WebSocket,
+    camera_index: int,
+    width: int = 320,
+    height: int = 240,
+    fps: float = 15,
+    quality: int = 40,
+):
+    """Push JPEG previews over WebSocket (4-byte age_ms + jpeg).
+
+    Much smoother than HTTP polling: one connection, server pushes each new frame.
+    """
+    if camera_index < 0:
+        await websocket.close(code=1008)
+        return
+
+    width = max(160, min(int(width), 1280))
+    height = max(120, min(int(height), 720))
+    fps = max(1.0, min(float(fps), 30.0))
+    quality = max(20, min(int(quality), 85))
+
+    await websocket.accept()
+    worker = None
+    try:
+        worker = camera_hub.open_stream(
+            camera_index, width=width, height=height, fps=fps, quality=quality
+        )
+        # Wait for first frame before entering the push loop.
+        first = await asyncio.to_thread(worker.wait_jpeg, 8.0)
+        if first is None and worker.error():
+            await websocket.close(code=1011)
+            return
+
+        seq = 0
+        frame_timeout = max(0.2, 2.0 / fps)
+        while True:
+            jpeg, seq, age_ms = await asyncio.to_thread(
+                worker.wait_next_jpeg, seq, frame_timeout
+            )
+            if jpeg is None:
+                if worker.error() and worker.latest_jpeg() is None:
+                    break
+                # Keepalive / wait for next frame
+                try:
+                    await asyncio.wait_for(websocket.receive_text(), timeout=0.001)
+                except (TimeoutError, asyncio.TimeoutError):
+                    pass
+                except WebSocketDisconnect:
+                    break
+                continue
+            worker.touch()
+            try:
+                await websocket.send_bytes(camera_hub.pack_ws_frame(jpeg, age_ms))
+            except (WebSocketDisconnect, RuntimeError):
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.error("Camera WS failed for index %s: %s", camera_index, exc)
+    finally:
+        if worker is not None:
+            camera_hub.close_stream(worker)
+        with contextlib.suppress(Exception):
+            await websocket.close()
 
 
 @app.post("/cameras/preview/stop")

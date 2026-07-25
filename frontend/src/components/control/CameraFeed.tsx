@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { VideoOff } from "lucide-react";
 import { useApi } from "@/contexts/ApiContext";
+import { useLatency } from "@/contexts/LatencyContext";
 import { cn } from "@/lib/utils";
 
 /** Preview caps — independent of dataset/recording camera resolution. */
 export const PREVIEW_WIDTH = 320;
 export const PREVIEW_HEIGHT = 240;
-export const PREVIEW_FPS = 10;
-export const PREVIEW_QUALITY = 45;
+export const PREVIEW_FPS = 15;
+export const PREVIEW_QUALITY = 40;
 
 interface CameraFeedProps {
   /** OpenCV camera index on the Mac host. */
@@ -27,13 +28,23 @@ interface CameraFeedProps {
   /** Override the default 4:3 frame (e.g. fixed thumbnail size). */
   frameClassName?: string;
   /**
-   * `poll` (default): fetch `/frame.jpg` — much lower latency on phones than
-   * browser-buffered multipart MJPEG. `mjpeg`: classic `<img>` stream.
+   * `ws` (default): server-pushed JPEGs over WebSocket — smoothest / lowest latency.
+   * `poll`: HTTP `/frame.jpg` fallback.
+   * `mjpeg`: classic `<img>` multipart stream.
    */
-  mode?: "poll" | "mjpeg";
+  mode?: "ws" | "poll" | "mjpeg";
 }
 
-/** Live Mac-camera feed via server JPEG (works over LAN / Cloudflare tunnel). */
+const httpToWs = (httpBase: string): string => {
+  if (typeof window === "undefined") return "ws://localhost:8000";
+  if (!httpBase) {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}`;
+  }
+  return httpBase.replace(/^http/, "ws");
+};
+
+/** Live Mac-camera feed (WebSocket push by default). */
 const CameraFeed: React.FC<CameraFeedProps> = ({
   cameraIndex,
   width = PREVIEW_WIDTH,
@@ -45,12 +56,27 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   reloadKey = 0,
   className,
   frameClassName,
-  mode = "poll",
+  mode = "ws",
 }) => {
-  const { baseUrl } = useApi();
+  const { baseUrl, wsBaseUrl } = useApi();
+  const { reportLatency, clearLatency } = useLatency();
   const [hasError, setHasError] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
+  const [activeMode, setActiveMode] = useState<"ws" | "poll" | "mjpeg">(mode);
   const imgRef = useRef<HTMLImageElement>(null);
+  const objectUrlRef = useRef<string | undefined>(undefined);
+  const latencySource =
+    cameraIndex != null && cameraIndex >= 0 ? (`cam:${cameraIndex}` as const) : null;
+
+  useEffect(() => {
+    setActiveMode(mode);
+  }, [mode, reloadKey, cameraIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (latencySource) clearLatency(latencySource);
+    };
+  }, [latencySource, clearLatency]);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({
@@ -64,21 +90,100 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   }, [width, height, fps, quality, reloadKey]);
 
   const mjpegSrc = useMemo(() => {
-    if (paused || cameraIndex == null || cameraIndex < 0 || mode !== "mjpeg") {
+    if (paused || cameraIndex == null || cameraIndex < 0 || activeMode !== "mjpeg") {
       return null;
     }
     return `${baseUrl}/cameras/${cameraIndex}/mjpeg?${query}`;
-  }, [baseUrl, cameraIndex, paused, mode, query]);
+  }, [baseUrl, cameraIndex, paused, activeMode, query]);
 
-  // Low-latency path: poll one JPEG at a time (skip backlog; no MJPEG buffer).
+  const pushLatency = (ageMs: number, networkMs: number) => {
+    if (!latencySource) return;
+    reportLatency(latencySource, Math.max(0, ageMs + networkMs / 2));
+  };
+
+  const applyBlob = (blob: Blob) => {
+    const next = URL.createObjectURL(blob);
+    if (imgRef.current) imgRef.current.src = next;
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = next;
+    setHasFrame(true);
+    setHasError(false);
+  };
+
+  // WebSocket push path
   useEffect(() => {
-    if (mode !== "poll" || paused || cameraIndex == null || cameraIndex < 0) {
+    if (activeMode !== "ws" || paused || cameraIndex == null || cameraIndex < 0) {
       return;
     }
 
     let cancelled = false;
-    let objectUrl: string | undefined;
-    const intervalMs = Math.max(50, 1000 / Math.max(1, fps));
+    let ws: WebSocket | null = null;
+    let reconnectTimer: number | undefined;
+    let lastReceive = performance.now();
+    let sawFrame = false;
+    let failCount = 0;
+
+    const connect = () => {
+      if (cancelled) return;
+      const root = wsBaseUrl || httpToWs(baseUrl);
+      const url = `${root}/ws/cameras/${cameraIndex}?${query}`;
+      ws = new WebSocket(url);
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = () => {
+        lastReceive = performance.now();
+        failCount = 0;
+      };
+
+      ws.onmessage = (ev) => {
+        if (cancelled) return;
+        const now = performance.now();
+        const interArrival = now - lastReceive;
+        lastReceive = now;
+        const buf = ev.data as ArrayBuffer;
+        if (buf.byteLength < 5) return;
+        const view = new DataView(buf);
+        const ageMs = view.getUint32(0);
+        const jpeg = buf.slice(4);
+        applyBlob(new Blob([jpeg], { type: "image/jpeg" }));
+        sawFrame = true;
+        pushLatency(ageMs, interArrival);
+      };
+
+      ws.onerror = () => {
+        failCount += 1;
+      };
+
+      ws.onclose = () => {
+        if (cancelled) return;
+        if (!sawFrame && failCount >= 2) {
+          setActiveMode("poll");
+          return;
+        }
+        reconnectTimer = window.setTimeout(connect, 600);
+      };
+    };
+
+    connect();
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      ws?.close();
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = undefined;
+      }
+      if (latencySource) clearLatency(latencySource);
+    };
+  }, [activeMode, paused, cameraIndex, baseUrl, wsBaseUrl, query, latencySource]);
+
+  // HTTP poll fallback
+  useEffect(() => {
+    if (activeMode !== "poll" || paused || cameraIndex == null || cameraIndex < 0) {
+      return;
+    }
+
+    let cancelled = false;
     const frameUrl = `${baseUrl}/cameras/${cameraIndex}/frame.jpg?${query}`;
 
     const sleep = (ms: number) =>
@@ -92,44 +197,43 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         try {
           const res = await fetch(frameUrl, { cache: "no-store" });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const ageHeader = res.headers.get("X-Frame-Age-Ms");
+          const ageMs = ageHeader ? Number(ageHeader) : 0;
           const blob = await res.blob();
           if (cancelled) break;
-          const next = URL.createObjectURL(blob);
-          if (imgRef.current) {
-            imgRef.current.src = next;
-          }
-          if (objectUrl) URL.revokeObjectURL(objectUrl);
-          objectUrl = next;
-          setHasFrame(true);
-          setHasError(false);
+          applyBlob(blob);
+          const rtt = performance.now() - t0;
+          pushLatency(Number.isFinite(ageMs) ? ageMs : 0, rtt);
         } catch {
           if (!cancelled) setHasError(true);
-          await sleep(400);
+          await sleep(500);
           continue;
         }
-        const wait = Math.max(0, intervalMs - (performance.now() - t0));
-        if (wait > 0) await sleep(wait);
       }
     };
 
     void run();
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = undefined;
+      }
+      if (latencySource) clearLatency(latencySource);
     };
-  }, [mode, paused, cameraIndex, baseUrl, query, fps]);
+  }, [activeMode, paused, cameraIndex, baseUrl, query, latencySource]);
 
   useEffect(() => {
     setHasError(false);
     setHasFrame(false);
-  }, [mjpegSrc, reloadKey, cameraIndex, mode]);
+  }, [mjpegSrc, reloadKey, cameraIndex, activeMode]);
 
   const showVideo =
     !hasError &&
     cameraIndex != null &&
     cameraIndex >= 0 &&
     !paused &&
-    (mode === "mjpeg" ? !!mjpegSrc : true);
+    (activeMode === "mjpeg" ? !!mjpegSrc : true);
 
   return (
     <div className={cn("bg-black overflow-hidden", className)}>
@@ -138,17 +242,17 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           <>
             <img
               ref={imgRef}
-              src={mode === "mjpeg" ? mjpegSrc ?? undefined : undefined}
+              src={activeMode === "mjpeg" ? mjpegSrc ?? undefined : undefined}
               alt={label ?? `Camera ${cameraIndex}`}
               className={cn(
                 "w-full h-full object-cover",
-                mode === "poll" && !hasFrame && "opacity-0"
+                (activeMode === "ws" || activeMode === "poll") && !hasFrame && "opacity-0"
               )}
               onError={() => {
-                if (mode === "mjpeg") setHasError(true);
+                if (activeMode === "mjpeg") setHasError(true);
               }}
             />
-            {mode === "poll" && !hasFrame && (
+            {(activeMode === "ws" || activeMode === "poll") && !hasFrame && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-gray-500 text-sm">Connecting…</span>
               </div>

@@ -665,7 +665,7 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
           formatTime={formatTime}
         />
         <div className="bg-black border border-zinc-800 rounded-lg p-4 flex items-center gap-3">
-          <span className="text-sm font-semibold text-zinc-300">Run inference</span>
+          <span className="text-sm font-semibold text-zinc-300">Run rollout</span>
           {checkpoints.length === 0 ? (
             <span className="text-xs text-zinc-500">No checkpoints yet — wait for the first save.</span>
           ) : (

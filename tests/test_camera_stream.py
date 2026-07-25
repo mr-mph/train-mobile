@@ -73,6 +73,7 @@ def test_get_jpeg_raises_when_no_frame() -> None:
     hub = CameraHub()
     worker = MagicMock()
     worker.wait_jpeg.return_value = None
+    worker.latest_packet.return_value = (None, 0, 0)
     worker.error.return_value = "Could not open camera index 0"
     worker.touch = MagicMock()
     with patch.object(hub, "_ensure_worker", return_value=worker):

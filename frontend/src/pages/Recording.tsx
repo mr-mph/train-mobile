@@ -23,7 +23,6 @@ import {
   setMuted as persistMuted,
   playRecordingStartCue,
   playResetStartCue,
-  playAutoAdvanceWarning,
 } from "@/lib/recordingAudio";
 import { useApi } from "@/contexts/ApiContext";
 import {
@@ -44,9 +43,6 @@ interface RecordingConfig {
   follower_config: string;
   dataset_repo_id: string;
   single_task: string;
-  num_episodes: number;
-  episode_time_s: number;
-  reset_time_s: number;
   fps: number;
   video: boolean;
   push_to_hub: boolean;
@@ -60,10 +56,10 @@ interface BackendStatus {
   recording_active: boolean;
   current_phase: string;
   current_episode?: number;
-  total_episodes?: number;
+  total_episodes?: number | null;
   saved_episodes?: number;
   phase_elapsed_seconds?: number;
-  phase_time_limit_s?: number;
+  phase_time_limit_s?: number | null;
   session_elapsed_seconds?: number;
   session_ended?: boolean;
   dataset_repo_id?: string;
@@ -94,9 +90,6 @@ const Recording = () => {
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [muted, setMutedState] = useState<boolean>(() => getMuted());
   const prevRealPhaseRef = useRef<Phase | null>(null);
-  // Bumps on each re-record so the auto-advance warning re-fires for the same episode number.
-  const [rerecordTick, setRerecordTick] = useState(0);
-  const warningFiredForPhaseRef = useRef<{ phase: Phase | null; episode: number | null; tick: number }>({ phase: null, episode: null, tick: 0 });
   // Guards against React StrictMode double-invocation of the start effect.
   const startInitiatedRef = useRef(false);
 
@@ -137,8 +130,6 @@ const Recording = () => {
   // without tearing itself down on every state change.
   const optimisticPhaseRef = useRef(optimisticPhase);
   optimisticPhaseRef.current = optimisticPhase;
-  const rerecordTickRef = useRef(rerecordTick);
-  rerecordTickRef.current = rerecordTick;
 
   // Poll backend status continuously to stay in sync
   useEffect(() => {
@@ -167,29 +158,9 @@ const Recording = () => {
             playResetStartCue();
           }
           prevRealPhaseRef.current = real;
-          warningFiredForPhaseRef.current = { phase: null, episode: null, tick: 0 };
-        }
-
-        const elapsed = status.phase_elapsed_seconds || 0;
-        const limit = status.phase_time_limit_s || 0;
-        const inFinalThreeSeconds = limit > 3 && elapsed >= limit - 3;
-        const ep = status.current_episode ?? null;
-        const tick = rerecordTickRef.current;
-        const warned = warningFiredForPhaseRef.current;
-        if (
-          inFinalThreeSeconds &&
-          currentOptimistic === null &&
-          (warned.phase !== real ||
-            warned.episode !== ep ||
-            warned.tick !== tick)
-        ) {
-          playAutoAdvanceWarning();
-          warningFiredForPhaseRef.current = { phase: real, episode: ep, tick };
         }
 
         if (!status.recording_active && status.session_ended) {
-          // A failure can land after episodes were already saved, so surface
-          // the reason either way and only go home when nothing survived it.
           if (status.current_phase === "error") {
             const saved = status.saved_episodes || 0;
             toast({
@@ -209,7 +180,7 @@ const Recording = () => {
             dataset_repo_id:
               status.dataset_repo_id || recordingConfig.dataset_repo_id,
             single_task: recordingConfig.single_task,
-            num_episodes: recordingConfig.num_episodes,
+            num_episodes: status.saved_episodes || 0,
             saved_episodes: status.saved_episodes || 0,
             session_elapsed_seconds: status.session_elapsed_seconds || 0,
           };
@@ -246,7 +217,7 @@ const Recording = () => {
         setRecordingSessionStarted(true);
         toast({
           title: "Recording Started",
-          description: `Started recording ${recordingConfig.num_episodes} episodes`,
+          description: "End each episode when ready, then start the next.",
         });
       } else {
         toast({
@@ -316,7 +287,6 @@ const Recording = () => {
       const data = await response.json();
 
       if (response.ok) {
-        setRerecordTick((t) => t + 1);
         toast({
           title: "Re-recording Episode",
           description: `Episode ${backendStatus.current_episode} will be re-recorded.`,
@@ -436,18 +406,11 @@ const Recording = () => {
   const realPhase = backendStatus.current_phase as Phase;
   const currentPhase: Phase = optimisticPhase ?? realPhase;
   const currentEpisode = backendStatus.current_episode ?? 1;
-  const totalEpisodes =
-    backendStatus.total_episodes ?? recordingConfig.num_episodes;
+  const savedEpisodes = backendStatus.saved_episodes ?? 0;
 
   const phaseElapsedTime = optimisticPhase
     ? 0
     : backendStatus.phase_elapsed_seconds || 0;
-  const phaseTimeLimit =
-    currentPhase === "recording"
-      ? recordingConfig.episode_time_s
-      : currentPhase === "resetting"
-      ? recordingConfig.reset_time_s
-      : backendStatus.phase_time_limit_s || 0;
 
   const sessionElapsedTime = backendStatus.session_elapsed_seconds || 0;
 
@@ -460,10 +423,10 @@ const Recording = () => {
 
   const phaseColor =
     currentPhase === "recording"
-      ? { dot: "bg-red-500", pill: "bg-red-500/15 text-red-300", timer: "text-green-400", bar: "bg-green-500", button: "bg-green-500 hover:bg-green-600" }
+      ? { dot: "bg-red-500", pill: "bg-red-500/15 text-red-300", timer: "text-green-400", button: "bg-green-500 hover:bg-green-600" }
       : currentPhase === "resetting"
-      ? { dot: "bg-green-500", pill: "bg-green-500/15 text-green-400", timer: "text-green-400", bar: "bg-green-500", button: "bg-green-500 hover:bg-green-500" }
-      : { dot: "bg-gray-500", pill: "bg-gray-500/15 text-gray-300", timer: "text-gray-400", bar: "bg-gray-500", button: "bg-gray-500" };
+      ? { dot: "bg-green-500", pill: "bg-green-500/15 text-green-400", timer: "text-green-400", button: "bg-green-500 hover:bg-green-600" }
+      : { dot: "bg-gray-500", pill: "bg-gray-500/15 text-gray-300", timer: "text-gray-400", button: "bg-gray-500" };
 
   const primaryLabel =
     currentPhase === "recording"
@@ -493,8 +456,12 @@ const Recording = () => {
 
         <div className="bg-black rounded-lg border border-zinc-800 p-8">
           <div className="flex justify-end items-center gap-4 mb-6 text-sm text-gray-400">
-            <span aria-label={`Episode ${currentEpisode} of ${totalEpisodes}`}>
-              Episode <span className="text-white font-semibold">{currentEpisode}</span> / {totalEpisodes}
+            <span aria-label={`Episode ${currentEpisode}, ${savedEpisodes} saved`}>
+              Episode{" "}
+              <span className="text-white font-semibold">{currentEpisode}</span>
+              <span className="mx-1 text-zinc-600">·</span>
+              <span className="text-white font-semibold">{savedEpisodes}</span>{" "}
+              saved
             </span>
             <span className="font-mono" aria-label={`Total session time ${formatTime(sessionElapsedTime)}`}>
               {formatTime(sessionElapsedTime)}
@@ -555,22 +522,17 @@ const Recording = () => {
             </div>
           </div>
 
-          <div className="text-center mb-4">
+          <div className="text-center mb-8">
             <div className={`text-7xl font-mono font-bold leading-none ${phaseColor.timer}`}>
               {formatTime(phaseElapsedTime)}
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              / {formatTime(phaseTimeLimit)}
+              {currentPhase === "recording"
+                ? "Elapsed — press End Episode when done"
+                : currentPhase === "resetting"
+                  ? "Reset — press Start Next when ready"
+                  : "Session time"}
             </div>
-          </div>
-
-          <div className="w-full bg-black rounded-full h-1.5 mb-8">
-            <div
-              className={`h-1.5 rounded-full transition-all duration-500 ${phaseColor.bar}`}
-              style={{
-                width: `${Math.min((phaseElapsedTime / phaseTimeLimit) * 100, 100)}%`,
-              }}
-            />
           </div>
 
           <Button

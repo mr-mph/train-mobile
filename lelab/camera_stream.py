@@ -14,15 +14,17 @@
 
 """Server-side OpenCV camera previews for remote browsers.
 
-Recording still uses the robot's configured resolution/fps. Previews default
-to a smaller JPEG stream (polled one frame at a time) so phones on Wi‑Fi see
-lower latency than multipart MJPEG in ``<img>`` (which browsers buffer heavily).
+Recording still uses the robot's configured resolution/fps. Previews capture
+on a background thread and push JPEGs over HTTP poll or WebSocket. Capture
+size is requested large enough for the device, then resized for encode so
+odd preview sizes (e.g. 320x240) don't break AVFoundation.
 """
 
 from __future__ import annotations
 
 import logging
 import platform
+import struct
 import threading
 import time
 from collections.abc import Iterator
@@ -30,12 +32,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Preview defaults — keep recording configs untouched; UI can pass higher values.
-_JPEG_QUALITY = 45
+_JPEG_QUALITY = 40
 _DEFAULT_WIDTH = 320
 _DEFAULT_HEIGHT = 240
-_DEFAULT_FPS = 10.0
-_IDLE_STOP_S = 2.5
+_DEFAULT_FPS = 15.0
+_IDLE_STOP_S = 30.0
+# Binary WS frame: 4-byte big-endian age_ms + JPEG bytes.
+_WS_AGE_STRUCT = struct.Struct(">I")
 
 
 def _cv2_backend() -> int:
@@ -70,8 +73,9 @@ class _CameraWorker:
         self.quality = max(20, min(int(quality), 85))
         self._cond = threading.Condition()
         self._jpeg: bytes | None = None
+        self._captured_at: float | None = None
         self._seq = 0
-        self._error: str | None = None
+        self._fatal: str | None = None
         self._stop = threading.Event()
         self._thread = threading.Thread(
             target=self._run,
@@ -107,31 +111,42 @@ class _CameraWorker:
         with self._cond:
             return self._jpeg
 
-    def wait_jpeg(self, timeout: float = 2.0) -> bytes | None:
-        """Block until a JPEG is available (or timeout / error)."""
+    def latest_packet(self) -> tuple[bytes | None, int, int]:
+        """Return (jpeg, seq, age_ms)."""
+        with self._cond:
+            age_ms = 0
+            if self._jpeg is not None and self._captured_at is not None:
+                age_ms = max(0, int((time.monotonic() - self._captured_at) * 1000))
+            return self._jpeg, self._seq, age_ms
+
+    def wait_jpeg(self, timeout: float = 5.0) -> bytes | None:
+        """Block until a JPEG is available (or timeout / fatal open error)."""
         deadline = time.monotonic() + timeout
         with self._cond:
-            while self._jpeg is None and self._error is None:
+            while self._jpeg is None and self._fatal is None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
                 self._cond.wait(timeout=remaining)
             return self._jpeg
 
-    def wait_next_jpeg(self, after_seq: int, timeout: float) -> tuple[bytes | None, int]:
-        """Wait for a frame newer than ``after_seq``."""
+    def wait_next_jpeg(self, after_seq: int, timeout: float) -> tuple[bytes | None, int, int]:
+        """Wait for a frame newer than ``after_seq``. Returns jpeg, seq, age_ms."""
         deadline = time.monotonic() + timeout
         with self._cond:
-            while self._seq <= after_seq and self._error is None:
+            while self._seq <= after_seq and self._fatal is None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    return self._jpeg, self._seq
+                    break
                 self._cond.wait(timeout=remaining)
-            return self._jpeg, self._seq
+            age_ms = 0
+            if self._jpeg is not None and self._captured_at is not None:
+                age_ms = max(0, int((time.monotonic() - self._captured_at) * 1000))
+            return self._jpeg, self._seq, age_ms
 
     def error(self) -> str | None:
         with self._cond:
-            return self._error
+            return self._fatal
 
     def stop(self) -> None:
         self._stop.set()
@@ -146,53 +161,69 @@ class _CameraWorker:
         cap = cv2.VideoCapture(self.index, backend)
         if not cap.isOpened():
             with self._cond:
-                self._error = f"Could not open camera index {self.index}"
+                self._fatal = f"Could not open camera index {self.index}"
                 self._cond.notify_all()
-            logger.warning(self._error)
+            logger.warning(self._fatal)
             return
 
         try:
-            # Prefer MJPG on USB cams — less host-side decode before we re-encode.
-            with_fourcc = getattr(cv2, "VideoWriter_fourcc", None)
-            if with_fourcc is not None:
-                cap.set(cv2.CAP_PROP_FOURCC, with_fourcc(*"MJPG"))
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.width))
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.height))
-            cap.set(cv2.CAP_PROP_FPS, float(self.fps))
-            # Critical for latency: don't queue stale frames (ignored on some backends).
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            # Request a common capture size; many USB/AVFoundation cams reject
+            # tiny preview sizes and then return no frames.
+            capture_w = max(self.width, 640)
+            capture_h = max(self.height, 480)
+            if platform.system() != "Darwin":
+                with_fourcc = getattr(cv2, "VideoWriter_fourcc", None)
+                if with_fourcc is not None:
+                    cap.set(cv2.CAP_PROP_FOURCC, with_fourcc(*"MJPG"))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(capture_w))
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(capture_h))
+            cap.set(cv2.CAP_PROP_FPS, float(max(self.fps, 15.0)))
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
 
             interval = 1.0 / self.fps
             encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self.quality]
+            consecutive_fails = 0
+
+            # Warm up a few frames — first reads after open are often empty.
+            for _ in range(5):
+                cap.read()
 
             while not self._stop.is_set():
                 t0 = time.monotonic()
-                # grab+retrieve: decode only the newest grabbed frame (lower latency
-                # than read() when the driver still queues despite BUFFERSIZE=1).
-                if not cap.grab():
-                    with self._cond:
-                        self._error = f"Failed to read frame from camera {self.index}"
-                        self._cond.notify_all()
-                    time.sleep(0.05)
-                    continue
-                ok, frame = cap.retrieve()
+                ok, frame = cap.read()
                 if not ok or frame is None:
-                    with self._cond:
-                        self._error = f"Failed to read frame from camera {self.index}"
-                        self._cond.notify_all()
+                    consecutive_fails += 1
+                    if consecutive_fails == 1 or consecutive_fails % 30 == 0:
+                        logger.warning(
+                            "Camera %s read failed (%d consecutive)",
+                            self.index,
+                            consecutive_fails,
+                        )
+                    if consecutive_fails >= 60 and self._jpeg is None:
+                        with self._cond:
+                            self._fatal = f"Failed to read frame from camera {self.index}"
+                            self._cond.notify_all()
                     time.sleep(0.05)
                     continue
 
+                consecutive_fails = 0
                 h, w = frame.shape[:2]
                 if w != self.width or h != self.height:
-                    frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
+                    frame = cv2.resize(
+                        frame, (self.width, self.height), interpolation=cv2.INTER_AREA
+                    )
 
                 ok, buf = cv2.imencode(".jpg", frame, encode_params)
                 if ok:
+                    captured_at = time.monotonic()
                     with self._cond:
                         self._jpeg = buf.tobytes()
+                        self._captured_at = captured_at
                         self._seq += 1
-                        self._error = None
+                        self._fatal = None
                         self._cond.notify_all()
 
                 elapsed = time.monotonic() - t0
@@ -241,7 +272,6 @@ class CameraHub:
         with self._lock:
             self._reap_idle_unlocked()
             worker = self._workers.get(index)
-            # Restart if preview geometry/quality changed (recording settings stay separate).
             if worker is not None and (
                 worker.width != width
                 or worker.height != height
@@ -265,16 +295,37 @@ class CameraHub:
         height: int = _DEFAULT_HEIGHT,
         fps: float = _DEFAULT_FPS,
         quality: int = _JPEG_QUALITY,
-        timeout: float = 2.0,
-    ) -> bytes:
-        """Return the latest JPEG (starts a short-lived preview capture if needed)."""
+        timeout: float = 5.0,
+    ) -> tuple[bytes, int]:
+        """Return (jpeg_bytes, age_ms)."""
         worker = self._ensure_worker(index, width, height, fps, quality=quality)
         jpeg = worker.wait_jpeg(timeout=timeout)
+        if jpeg is None:
+            jpeg, _seq, age_ms = worker.latest_packet()
+        else:
+            _j, _seq, age_ms = worker.latest_packet()
+            jpeg = jpeg or _j
         err = worker.error()
         if jpeg is None:
             raise RuntimeError(err or f"No frame from camera {index}")
         worker.touch()
-        return jpeg
+        return jpeg, age_ms
+
+    def open_stream(
+        self,
+        index: int,
+        *,
+        width: int = _DEFAULT_WIDTH,
+        height: int = _DEFAULT_HEIGHT,
+        fps: float = _DEFAULT_FPS,
+        quality: int = _JPEG_QUALITY,
+    ) -> _CameraWorker:
+        worker = self._ensure_worker(index, width, height, fps, quality=quality)
+        worker.add_stream_client()
+        return worker
+
+    def close_stream(self, worker: _CameraWorker) -> None:
+        worker.remove_stream_client()
 
     def mjpeg_frames(
         self,
@@ -285,28 +336,24 @@ class CameraHub:
         fps: float = _DEFAULT_FPS,
         quality: int = _JPEG_QUALITY,
     ) -> Iterator[bytes]:
-        """Yield multipart MJPEG chunks until the client disconnects.
-
-        Prefers pushing only *new* frames (no fixed sleep after each yield) so
-        latency stays closer to one capture interval.
-        """
-        worker = self._ensure_worker(index, width, height, fps, quality=quality)
-        worker.add_stream_client()
+        """Yield multipart MJPEG chunks until the client disconnects."""
+        worker = self.open_stream(index, width=width, height=height, fps=fps, quality=quality)
         boundary = b"--frame"
-        frame_timeout = max(0.2, 2.0 / max(1.0, fps))
+        frame_timeout = max(0.15, 1.5 / max(1.0, fps))
         try:
-            jpeg = worker.wait_jpeg(timeout=5.0)
+            jpeg, _seq, _age = worker.wait_next_jpeg(0, timeout=5.0)
+            if jpeg is None:
+                jpeg = worker.wait_jpeg(timeout=5.0)
             err = worker.error()
             if jpeg is None:
                 raise RuntimeError(err or f"No frame from camera {index}")
 
             seq = 0
             while True:
-                jpeg, seq = worker.wait_next_jpeg(seq, timeout=frame_timeout)
+                jpeg, seq, _age = worker.wait_next_jpeg(seq, timeout=frame_timeout)
                 if jpeg is None:
-                    err = worker.error()
-                    if err:
-                        raise RuntimeError(err)
+                    if worker.error() and worker.latest_jpeg() is None:
+                        raise RuntimeError(worker.error())
                     continue
                 worker.touch()
                 yield (
@@ -318,7 +365,11 @@ class CameraHub:
                     + b"\r\n"
                 )
         finally:
-            worker.remove_stream_client()
+            self.close_stream(worker)
+
+    @staticmethod
+    def pack_ws_frame(jpeg: bytes, age_ms: int) -> bytes:
+        return _WS_AGE_STRUCT.pack(max(0, min(age_ms, 0xFFFFFFFF))) + jpeg
 
 
 camera_hub = CameraHub()

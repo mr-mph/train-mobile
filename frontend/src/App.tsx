@@ -17,9 +17,11 @@ import NotFound from "@/pages/NotFound";
 import SingleTabGuard from "@/components/SingleTabGuard";
 import TeleopStopNotice from "@/components/TeleopStopNotice";
 import UpdateNotice from "@/components/UpdateNotice";
+import LatencyIndicator from "@/components/LatencyIndicator";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import { ApiProvider } from "./contexts/ApiContext";
 import { HfAuthProvider } from "./contexts/HfAuthContext";
+import { LatencyProvider } from "./contexts/LatencyContext";
 
 const queryClient = new QueryClient();
 
@@ -30,30 +32,33 @@ function App() {
         <ThemeProvider defaultTheme="dark">
           <ApiProvider>
             <HfAuthProvider>
-              <UrdfProvider>
-                <DragAndDropProvider>
-                  <BrowserRouter>
-                    <SingleTabGuard>
-                      <TeleopStopNotice />
-                      <UpdateNotice />
-                      <Routes>
-                        <Route path="/" element={<Landing />} />
-                        <Route path="/teleoperation" element={<Teleoperation />} />
-                        <Route path="/recording" element={<Recording />} />
-                        <Route path="/upload" element={<Upload />} />
-                        <Route path="/training" element={<Training />} />
-                        <Route path="/training/:jobId" element={<Training />} />
-                        <Route path="/inference" element={<Inference />} />
-                        <Route path="/calibration" element={<Calibration />} />
-                        <Route path="/edit-dataset" element={<EditDataset />} />
+              <LatencyProvider>
+                <UrdfProvider>
+                  <DragAndDropProvider>
+                    <BrowserRouter>
+                      <SingleTabGuard>
+                        <LatencyIndicator />
+                        <TeleopStopNotice />
+                        <UpdateNotice />
+                        <Routes>
+                          <Route path="/" element={<Landing />} />
+                          <Route path="/teleoperation" element={<Teleoperation />} />
+                          <Route path="/recording" element={<Recording />} />
+                          <Route path="/upload" element={<Upload />} />
+                          <Route path="/training" element={<Training />} />
+                          <Route path="/training/:jobId" element={<Training />} />
+                          <Route path="/inference" element={<Inference />} />
+                          <Route path="/calibration" element={<Calibration />} />
+                          <Route path="/edit-dataset" element={<EditDataset />} />
 
-                        <Route path="*" element={<NotFound />} />
-                      </Routes>
-                    </SingleTabGuard>
-                    <Toaster />
-                  </BrowserRouter>
-                </DragAndDropProvider>
-              </UrdfProvider>
+                          <Route path="*" element={<NotFound />} />
+                        </Routes>
+                      </SingleTabGuard>
+                      <Toaster />
+                    </BrowserRouter>
+                  </DragAndDropProvider>
+                </UrdfProvider>
+              </LatencyProvider>
             </HfAuthProvider>
           </ApiProvider>
         </ThemeProvider>

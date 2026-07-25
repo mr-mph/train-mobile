@@ -268,14 +268,14 @@ const InferenceModal: React.FC<Props> = ({
             </div>
           </div>
           <DialogTitle className="text-white text-center text-2xl font-bold">
-            Configure Inference
+            Configure rollout
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
           <DialogDescription className="text-gray-400 text-base leading-relaxed text-center">
-            Pick a checkpoint and confirm hardware. The selected policy will
-            drive the follower autonomously for the configured duration.
+            Pick a checkpoint and confirm cameras. The policy drives the
+            follower for the configured duration.
           </DialogDescription>
 
           <div className="space-y-4">

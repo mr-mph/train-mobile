@@ -207,7 +207,7 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
               size="icon"
               onClick={handlePlay}
               className="h-8 w-8 bg-green-500 hover:bg-green-600 text-white"
-              aria-label="Run inference with this checkpoint"
+              aria-label="Run rollout with this checkpoint"
             >
               <Play className="w-4 h-4" />
             </Button>

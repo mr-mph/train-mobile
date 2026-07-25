@@ -26,9 +26,9 @@ const UsageInstructionsModal: React.FC<Props> = ({
           <DialogTitle className="text-xl">Welcome to TrainMobile</DialogTitle>
           <DialogDescription className="text-gray-400 text-left space-y-3 pt-2">
             <p>
-              Run the host on your Mac, open this UI on your phone (Cloudflare
-              Tunnel), then: calibrate → teleop/record → edit dataset → train on
-              Vast.ai → rollout → save models.
+              Four tabs: Teleoperation, Recording, Training, and Rollout.
+              Calibrate the robot (gear), record a dataset, train (Vast or
+              local), then rollout a checkpoint on the arm.
             </p>
             <p className="font-mono text-xs bg-black/50 p-2 rounded border border-zinc-800">
               lelab --dev

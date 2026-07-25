@@ -13,6 +13,7 @@ interface RobotConfigManagerProps {
   selectRobot: (name: string) => void;
   createRobot: (name: string) => Promise<boolean>;
   deleteRobot: (name: string) => Promise<boolean>;
+  showTeleopButton?: boolean;
 }
 
 const RobotConfigManager: React.FC<RobotConfigManagerProps> = ({
@@ -23,6 +24,7 @@ const RobotConfigManager: React.FC<RobotConfigManagerProps> = ({
   selectRobot,
   createRobot,
   deleteRobot,
+  showTeleopButton = true,
 }) => {
   const navigate = useNavigate();
   const { baseUrl, fetchWithHeaders } = useApi();
@@ -81,6 +83,7 @@ const RobotConfigManager: React.FC<RobotConfigManagerProps> = ({
       onConfigure={handleConfigure}
       onTeleop={handleTeleop}
       onDelete={deleteRobot}
+      showTeleopButton={showTeleopButton}
     />
   );
 };
