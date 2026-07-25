@@ -233,16 +233,16 @@ const ConfigurationMode: React.FC = () => {
     setIsStarting(true);
     try {
       const job = await startTrainingJob(baseUrl, fetchWithHeaders, configToRequest(trainingConfig));
-      const isVast = trainingConfig.target.runner === "vast";
+      const runner = trainingConfig.target.runner;
+      const cloud = runner === "vast" || runner === "hf_cloud";
       toast({
-        title: isVast ? "Provisioning Vast…" : "Training Started",
-        description: isVast
+        title: runner === "vast" ? "Provisioning Vast…" : "Training started",
+        description: cloud
           ? `${job.name} — status is on the Jobs screen`
           : job.name,
       });
-      // Vast provision can take minutes; leave the config page and show live
-      // status on the main Jobs list instead of blocking here.
-      navigate(isVast ? "/?tab=train" : `/training/${job.id}`);
+      // Cloud (and local) jobs: leave config and show live status on Jobs.
+      navigate("/?tab=train");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast({ title: "Error", description: msg, variant: "destructive" });
