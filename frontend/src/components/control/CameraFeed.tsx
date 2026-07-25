@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { VideoOff } from "lucide-react";
 import { useApi } from "@/contexts/ApiContext";
-import { useLatency } from "@/contexts/LatencyContext";
 import { cn } from "@/lib/utils";
 
 /** Preview caps — independent of dataset/recording camera resolution. */
@@ -59,24 +58,15 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   mode = "ws",
 }) => {
   const { baseUrl, wsBaseUrl } = useApi();
-  const { reportLatency, clearLatency } = useLatency();
   const [hasError, setHasError] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
   const [activeMode, setActiveMode] = useState<"ws" | "poll" | "mjpeg">(mode);
   const imgRef = useRef<HTMLImageElement>(null);
   const objectUrlRef = useRef<string | undefined>(undefined);
-  const latencySource =
-    cameraIndex != null && cameraIndex >= 0 ? (`cam:${cameraIndex}` as const) : null;
 
   useEffect(() => {
     setActiveMode(mode);
   }, [mode, reloadKey, cameraIndex]);
-
-  useEffect(() => {
-    return () => {
-      if (latencySource) clearLatency(latencySource);
-    };
-  }, [latencySource, clearLatency]);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({
@@ -96,11 +86,6 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     return `${baseUrl}/cameras/${cameraIndex}/mjpeg?${query}`;
   }, [baseUrl, cameraIndex, paused, activeMode, query]);
 
-  const pushLatency = (ageMs: number, networkMs: number) => {
-    if (!latencySource) return;
-    reportLatency(latencySource, Math.max(0, ageMs + networkMs / 2));
-  };
-
   const applyBlob = (blob: Blob) => {
     const next = URL.createObjectURL(blob);
     if (imgRef.current) imgRef.current.src = next;
@@ -119,7 +104,6 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     let cancelled = false;
     let ws: WebSocket | null = null;
     let reconnectTimer: number | undefined;
-    let lastReceive = performance.now();
     let sawFrame = false;
     let failCount = 0;
 
@@ -131,23 +115,16 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {
-        lastReceive = performance.now();
         failCount = 0;
       };
 
       ws.onmessage = (ev) => {
         if (cancelled) return;
-        const now = performance.now();
-        const interArrival = now - lastReceive;
-        lastReceive = now;
         const buf = ev.data as ArrayBuffer;
         if (buf.byteLength < 5) return;
-        const view = new DataView(buf);
-        const ageMs = view.getUint32(0);
         const jpeg = buf.slice(4);
         applyBlob(new Blob([jpeg], { type: "image/jpeg" }));
         sawFrame = true;
-        pushLatency(ageMs, interArrival);
       };
 
       ws.onerror = () => {
@@ -173,9 +150,8 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = undefined;
       }
-      if (latencySource) clearLatency(latencySource);
     };
-  }, [activeMode, paused, cameraIndex, baseUrl, wsBaseUrl, query, latencySource]);
+  }, [activeMode, paused, cameraIndex, baseUrl, wsBaseUrl, query]);
 
   // HTTP poll fallback
   useEffect(() => {
@@ -193,17 +169,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
 
     const run = async () => {
       while (!cancelled) {
-        const t0 = performance.now();
         try {
           const res = await fetch(frameUrl, { cache: "no-store" });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const ageHeader = res.headers.get("X-Frame-Age-Ms");
-          const ageMs = ageHeader ? Number(ageHeader) : 0;
           const blob = await res.blob();
           if (cancelled) break;
           applyBlob(blob);
-          const rtt = performance.now() - t0;
-          pushLatency(Number.isFinite(ageMs) ? ageMs : 0, rtt);
         } catch {
           if (!cancelled) setHasError(true);
           await sleep(500);
@@ -219,9 +190,8 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = undefined;
       }
-      if (latencySource) clearLatency(latencySource);
     };
-  }, [activeMode, paused, cameraIndex, baseUrl, query, latencySource]);
+  }, [activeMode, paused, cameraIndex, baseUrl, query]);
 
   useEffect(() => {
     setHasError(false);
